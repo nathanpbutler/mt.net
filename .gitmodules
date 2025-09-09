@@ -1,0 +1,3 @@
+[submodule "reference/original-mt"]
+	path = reference/original-mt
+	url = https://github.com/mutschler/mt.git
