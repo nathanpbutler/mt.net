@@ -1,8 +1,9 @@
 using System.CommandLine;
-using MtNet.Models;
-using MtNet.Utilities;
+using nathanbutlerDEV.mt.net.Models;
+using nathanbutlerDEV.mt.net.Utilities;
+using nathanbutlerDEV.mt.net.Services;
 
-namespace MtNet.Commands;
+namespace nathanbutlerDEV.mt.net.Commands;
 
 public static class RootCommandBuilder
 {
@@ -365,10 +366,10 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(showConfigOption);
 
         // Set the action for the root command (same logic as generate command)
-        rootCommand.SetAction(parseResult =>
+        rootCommand.SetAction(async parseResult =>
         {
             var file = parseResult.GetValue(fileArgument);
-            
+
             // Handle special actions first
             if (parseResult.GetValue(filtersOption))
             {
@@ -393,17 +394,17 @@ public static class RootCommandBuilder
                 Height = parseResult.GetValue(heightOption),
                 Padding = parseResult.GetValue(paddingOption),
                 Filename = parseResult.GetValue(outputOption)!,
-                
+
                 // Time options
                 From = parseResult.GetValue(fromOption)!,
                 End = parseResult.GetValue(toOption)!,
                 Interval = parseResult.GetValue(intervalOption),
-                
+
                 // Output control
                 SingleImages = parseResult.GetValue(singleImagesOption),
                 Overwrite = parseResult.GetValue(overwriteOption),
                 SkipExisting = parseResult.GetValue(skipExistingOption),
-                
+
                 // Visual customization
                 FontPath = parseResult.GetValue(fontOption)!,
                 FontSize = parseResult.GetValue(fontSizeOption),
@@ -412,39 +413,39 @@ public static class RootCommandBuilder
                 Header = parseResult.GetValue(headerOption),
                 HeaderMeta = parseResult.GetValue(headerMetaOption),
                 HeaderImage = parseResult.GetValue(headerImageOption) ?? "",
-                
-                // Colors and styling  
+
+                // Colors and styling
                 BgContent = parseResult.GetValue(bgContentOption)!,
                 BgHeader = parseResult.GetValue(bgHeaderOption)!,
                 FgHeader = parseResult.GetValue(fgHeaderOption)!,
                 Border = parseResult.GetValue(borderOption),
-                
+
                 // Watermarks
                 Watermark = parseResult.GetValue(watermarkOption) ?? "",
                 WatermarkAll = parseResult.GetValue(watermarkAllOption) ?? "",
-                
+
                 // Filters
                 Filter = parseResult.GetValue(filterOption)!,
-                
+
                 // Processing
                 SkipBlank = parseResult.GetValue(skipBlankOption),
                 SkipBlurry = parseResult.GetValue(skipBlurryOption),
                 SkipCredits = parseResult.GetValue(skipCreditsOption),
                 Fast = parseResult.GetValue(fastOption),
                 Sfw = parseResult.GetValue(sfwOption),
-                
+
                 // WebVTT
                 Vtt = parseResult.GetValue(vttOption),
                 WebVtt = parseResult.GetValue(webVttOption),
-                
+
                 // Upload
                 Upload = parseResult.GetValue(uploadOption),
                 UploadUrl = parseResult.GetValue(uploadUrlOption)!,
-                
+
                 // Thresholds
                 BlurThreshold = parseResult.GetValue(blurThresholdOption),
                 BlankThreshold = parseResult.GetValue(blankThresholdOption),
-                
+
                 // Misc
                 Comment = parseResult.GetValue(commentOption)!
             };
@@ -457,17 +458,144 @@ public static class RootCommandBuilder
                 Console.WriteLine($"Saving configuration to: {saveConfigPath}");
             }
 
-            Console.WriteLine($"Processing video file: {file?.FullName}");
-            Console.WriteLine($"Options configured: NumCaps={options.NumCaps}, Columns={options.Columns}, Width={options.Width}");
-            Console.WriteLine($"Time range: {options.From} to {options.End}, Interval: {options.Interval}s");
-            Console.WriteLine($"Output: {options.Filename}, Single images: {options.SingleImages}");
-            Console.WriteLine($"Filters: {options.Filter}, Skip blank: {options.SkipBlank}, Skip blurry: {options.SkipBlurry}");
-            Console.WriteLine("Video processing not yet implemented.");
+            if (file == null || !file.Exists)
+            {
+                Console.Error.WriteLine("Error: Video file not found or not specified.");
+                return 1;
+            }
 
-            return 0;
+            try
+            {
+                await ProcessVideoAsync(file.FullName, options);
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error processing video: {ex.Message}");
+                if (options.Verbose)
+                {
+                    Console.Error.WriteLine(ex.StackTrace);
+                }
+                return 1;
+            }
         });
 
         return rootCommand;
+    }
+
+    private static async Task ProcessVideoAsync(string videoPath, ThumbnailOptions options)
+    {
+        Console.WriteLine($"Processing video: {videoPath}");
+
+        // Initialize services
+        var videoProcessor = new VideoProcessor();
+        var contentDetection = new ContentDetectionService();
+        var filterService = new FilterService();
+        var imageComposer = new ImageComposer();
+        var outputService = new OutputService();
+
+        // Step 1: Extract video metadata
+        Console.WriteLine("Extracting video metadata...");
+        var headerInfo = await videoProcessor.GetVideoMetadataAsync(videoPath);
+
+        // Step 2: Calculate timestamps
+        Console.WriteLine("Calculating timestamps...");
+        var timestamps = videoProcessor.CalculateTimestamps(headerInfo.Duration, options);
+        Console.WriteLine($"Will extract {timestamps.Count} frames");
+
+        // Step 3: Extract frames with content detection
+        Console.WriteLine("Extracting frames...");
+        var frames = new List<(SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>, TimeSpan)>();
+
+        for (int i = 0; i < timestamps.Count; i++)
+        {
+            var timestamp = timestamps[i];
+            Console.Write($"\rExtracting frame {i + 1}/{timestamps.Count} at {timestamp:hh\\:mm\\:ss}...");
+
+            var frame = await videoProcessor.ExtractFrameWithRetriesAsync(
+                videoPath,
+                timestamp,
+                options,
+                skipCondition: img =>
+                {
+                    if (options.SkipBlank && contentDetection.IsBlankFrame(img, options.BlankThreshold))
+                        return true;
+                    if (options.SkipBlurry && contentDetection.IsBlurryFrame(img, options.BlurThreshold))
+                        return true;
+                    if (options.Sfw && !contentDetection.IsSafeForWork(img))
+                        return true;
+                    return false;
+                },
+                maxRetries: 3
+            );
+
+            if (frame != null)
+            {
+                frames.Add((frame, timestamp));
+            }
+        }
+
+        Console.WriteLine($"\nExtracted {frames.Count} frames");
+
+        if (frames.Count == 0)
+        {
+            Console.Error.WriteLine("Error: No valid frames extracted from video");
+            return;
+        }
+
+        // Step 4: Apply image filters
+        if (!string.IsNullOrEmpty(options.Filter) && options.Filter != "none")
+        {
+            Console.WriteLine($"Applying filters: {options.Filter}");
+            foreach (var (frame, _) in frames)
+            {
+                filterService.ApplyFilters(frame, options.Filter);
+            }
+        }
+
+        // Step 5: Create contact sheet or save individual images
+        if (options.SingleImages)
+        {
+            Console.WriteLine("Saving individual images...");
+            await outputService.SaveIndividualImagesAsync(frames, videoPath, options);
+        }
+        else
+        {
+            Console.WriteLine("Creating contact sheet...");
+            using var contactSheet = imageComposer.CreateContactSheet(frames, headerInfo, options);
+
+            // Apply watermarks if specified
+            if (!string.IsNullOrEmpty(options.Watermark))
+            {
+                imageComposer.ApplyWatermark(contactSheet, options.Watermark, center: true);
+            }
+
+            if (!string.IsNullOrEmpty(options.WatermarkAll))
+            {
+                foreach (var (frame, _) in frames)
+                {
+                    imageComposer.ApplyWatermark(frame, options.WatermarkAll, center: false);
+                }
+            }
+
+            Console.WriteLine("Saving contact sheet...");
+            var outputPath = await outputService.SaveContactSheetAsync(contactSheet, videoPath, options);
+
+            // Step 6: Generate WebVTT if requested
+            if (options.Vtt || options.WebVtt)
+            {
+                Console.WriteLine("Generating WebVTT file...");
+                await outputService.GenerateWebVttAsync(frames, outputPath, videoPath, options);
+            }
+        }
+
+        // Cleanup
+        foreach (var (frame, _) in frames)
+        {
+            frame.Dispose();
+        }
+
+        Console.WriteLine("Processing complete!");
     }
 
     private static void ShowAvailableFilters()

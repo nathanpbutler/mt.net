@@ -29,12 +29,38 @@ cd mt.net
 dotnet build
 ```
 
+## Quick Start
+
+1. **Install FFmpeg** (required):
+
+   ```bash
+   # macOS
+   brew install ffmpeg
+
+   # Ubuntu/Debian
+   sudo apt-get install ffmpeg
+
+   # Windows: Download from https://ffmpeg.org/download.html
+   ```
+
+2. **Build the project**:
+
+   ```bash
+   dotnet build
+   ```
+
+3. **Generate your first contact sheet**:
+
+   ```bash
+   dotnet run -- path/to/your/video.mp4
+   ```
+
 ## Usage
 
 ### Basic Usage
 
 ```bash
-# Generate a 3x3 grid of thumbnails
+# Generate a 3x3 grid of thumbnails (default: 4 thumbnails, 2 columns)
 dotnet run -- video.mp4
 
 # Custom layout with 9 thumbnails in 3 columns, 300px width
@@ -42,6 +68,12 @@ dotnet run -- video.mp4 --numcaps 9 --columns 3 --width 300
 
 # Apply filters and skip blank frames
 dotnet run -- video.mp4 --filter greyscale,sepia --skip-blank --header-meta
+
+# Generate individual thumbnail images instead of contact sheet
+dotnet run -- video.mp4 --single-images
+
+# Create WebVTT file for HTML5 video players
+dotnet run -- video.mp4 --vtt
 
 # Show available filters
 dotnet run -- --filters
@@ -120,24 +152,35 @@ The application supports configuration through:
 
 - **Project Structure**: Organized codebase with proper separation of concerns
 - **Dependencies**: All required NuGet packages integrated
-- **Command-Line Interface**: 100% feature parity with original Go implementation
+- **Command-Line Interface**: 100% feature parity with original Go implementation (40+ options)
 - **Configuration System**: JSON config support with environment variables and CLI overrides
+- **Video Processing**: Complete FFmpeg integration for metadata extraction and frame capture
+- **Image Composition**: Full contact sheet creation with headers, timestamps, and watermarks
+- **Image Filtering**: All filter types implemented (greyscale, sepia, invert, fancy, cross, strip)
+- **Content Detection**: Blank and blur frame detection with configurable thresholds
+- **Output Management**: File handling, WebVTT generation, and multiple output formats
+- **Processing Pipeline**: Fully integrated async workflow with progress reporting
 
-### 🚧 In Development
+### 🚧 In Development / Not Yet Implemented
 
-- **Video Processing**: Frame extraction and metadata handling
-- **Image Composition**: Contact sheet creation and layout
-- **Image Filtering**: Implementation of all filter types
-- **Content Detection**: Blank and blur frame detection
-- **Output Management**: File handling and export functionality
+- **Upload Functionality**: HTTP upload feature (placeholder only)
+- **Configuration Persistence**: --save-config, --config-file, --show-config (placeholders only)
+- **Enhanced Logging**: Serilog integration for structured logging
+- **Testing**: End-to-end testing with real video files needed
+
+### ⚠️ Prerequisites
+
+**FFmpeg Required**: This tool requires FFmpeg to be installed and available in your system PATH. Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
 ## Dependencies
 
 - **System.CommandLine**: Command-line interface parsing
 - **FFMpegCore**: Video processing and frame extraction
 - **SixLabors.ImageSharp**: Image manipulation and processing
+- **SixLabors.ImageSharp.Drawing**: Drawing operations for contact sheets
+- **SixLabors.Fonts**: Text rendering for timestamps and headers
 - **Microsoft.Extensions.Configuration**: Configuration management
-- **Serilog**: Structured logging
+- **Serilog**: Structured logging (planned)
 
 ## Contributing
 
@@ -163,13 +206,30 @@ dotnet test
 
 ```text
 mt.net/
-├── Commands/           # CLI command definitions
-├── Configuration/      # Configuration management
-├── Models/            # Data models and options
+├── Commands/           # CLI command definitions (RootCommand.cs)
+├── Configuration/      # Configuration management (AppConfig, ConfigurationBuilder)
+├── Models/            # Data models (ThumbnailOptions, HeaderInfo, ImageFilter)
 ├── Services/          # Business logic services
-├── Utilities/         # Helper utilities
+│   ├── VideoProcessor.cs          # Video metadata and frame extraction
+│   ├── ImageComposer.cs           # Contact sheet creation
+│   ├── FilterService.cs           # Image filters
+│   ├── ContentDetectionService.cs # Blank/blur detection
+│   └── OutputService.cs           # File saving and WebVTT
+├── Utilities/         # Helper utilities (ColorParser, TimeSpanParser, FileValidator)
 └── reference/         # Original Go implementation
 ```
+
+## How It Works
+
+1. **Video Analysis**: Extracts video metadata (resolution, duration, codec, fps, bitrate)
+2. **Timestamp Calculation**: Determines optimal frame positions based on video duration and options
+3. **Frame Extraction**: Uses FFmpeg to capture frames at calculated timestamps
+4. **Content Detection**: Optionally skips blank or blurry frames (with retry logic)
+5. **Filter Application**: Applies visual effects (greyscale, sepia, fancy rotation, etc.)
+6. **Contact Sheet Creation**: Arranges thumbnails in a grid with customizable layout
+7. **Header Generation**: Adds metadata header with file information
+8. **Timestamp Overlay**: Adds time codes to each thumbnail
+9. **Output**: Saves final contact sheet and optionally generates WebVTT file
 
 ## License
 

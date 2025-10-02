@@ -1,16 +1,11 @@
 using Microsoft.Extensions.Configuration;
-using MtNet.Models;
+using nathanbutlerDEV.mt.net.Models;
 
-namespace MtNet.Configuration;
+namespace nathanbutlerDEV.mt.net.Configuration;
 
-public class AppConfig
+public class AppConfig(IConfiguration configuration)
 {
-    private readonly IConfiguration _configuration;
-
-    public AppConfig(IConfiguration configuration)
-    {
-        _configuration = configuration;
-    }
+    private readonly IConfiguration _configuration = configuration;
 
     public ThumbnailOptions GetThumbnailOptions()
     {
@@ -21,7 +16,7 @@ public class AppConfig
 
     public T GetValue<T>(string key, T defaultValue = default!)
     {
-        return _configuration.GetValue<T>(key, defaultValue);
+        return _configuration.GetValue(key, defaultValue) ?? defaultValue;
     }
 
     public string GetConnectionString(string name)

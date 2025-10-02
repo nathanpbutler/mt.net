@@ -1,6 +1,6 @@
 using System.CommandLine;
-using MtNet.Commands;
-using MtNet.Configuration;
+using nathanbutlerDEV.mt.net.Commands;
+using nathanbutlerDEV.mt.net.Configuration;
 using Serilog;
 
 namespace MtNet;

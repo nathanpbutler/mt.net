@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace MtNet.Configuration;
+namespace nathanbutlerDEV.mt.net.Configuration;
 
 public static class ConfigurationBuilder
 {

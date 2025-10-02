@@ -1,4 +1,4 @@
-namespace MtNet.Models;
+namespace nathanbutlerDEV.mt.net.Models;
 
 public enum ImageFilter
 {

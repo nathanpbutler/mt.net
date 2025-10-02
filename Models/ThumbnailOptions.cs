@@ -1,6 +1,6 @@
 using System.Drawing;
 
-namespace MtNet.Models;
+namespace nathanbutlerDEV.mt.net.Models;
 
 public class ThumbnailOptions
 {

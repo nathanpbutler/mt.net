@@ -45,6 +45,8 @@ dotnet run -- --help     # Show all options
   - System.CommandLine (CLI parsing)
   - FFMpegCore (video processing)
   - SixLabors.ImageSharp (image manipulation)
+  - SixLabors.ImageSharp.Drawing (drawing operations)
+  - SixLabors.Fonts (text rendering)
   - Microsoft.Extensions.Configuration.* (config management)
   - Serilog (logging)
 
@@ -62,126 +64,138 @@ dotnet run -- --help     # Show all options
 - **Configuration**: JSON config support with environment variables and CLI overrides
 - **Utilities**: Color parsing, time parsing, file validation helpers
 
-### 🚧 Core Implementation Needed
+### ✅ Core Services Implementation Complete
 
-#### ❌ Video Processing (VideoProcessor.cs) **Priority: HIGH**
+#### ✅ Video Processing (VideoProcessor.cs)
 
-```csharp
-// Services/VideoProcessor.cs - Main video processing logic
-- ExtractFrames(videoPath, timestamps) using FFMpegCore
-- CalculateTimestamps(duration, numCaps, interval, from, to)
-- HandleSeekingModes(fast vs accurate)
-- ApplyTimeRanges(from, to, skipCredits)
-- GetVideoMetadata(videoPath) -> HeaderInfo
-```
+`Services/VideoProcessor.cs` - Fully implemented video processing logic:
 
-#### ❌ Image Composition (ImageComposer.cs) **Priority: HIGH**
+- ✅ GetVideoMetadataAsync() - Extract metadata using FFMpegCore
+- ✅ CalculateTimestamps() - Calculate timestamps based on numCaps, interval, from, to, skipCredits
+- ✅ ExtractFramesAsync() - Extract frames at calculated timestamps
+- ✅ ExtractFrameWithRetriesAsync() - Extract frames with retry logic for content detection
+- ✅ Support for fast vs accurate seeking modes
 
-```csharp
-// Services/ImageComposer.cs - Contact sheet creation
-- CreateContactSheet(thumbnails, options) using ImageSharp
-- ApplyLayout(images, columns, padding, background)
-- GenerateHeader(headerInfo, options)
-- AddTimestamps(images, timestamps, options)
-- ApplyWatermarks(images, watermarkPaths, options)
-```
+#### ✅ Image Composition (ImageComposer.cs)
 
-#### ❌ Image Filtering (FilterService.cs) **Priority: MEDIUM**
+`Services/ImageComposer.cs` - Complete contact sheet creation:
 
-```csharp
-// Services/FilterService.cs - Image filter implementations
-- ApplyFilters(image, filterNames) 
-- GreyscaleFilter, SepiaFilter, InvertFilter
-- FancyFilter (rotation), CrossProcessingFilter
-- StripFilter (film strip effect)
-- ChainFilters(image, filterList)
-```
+- ✅ CreateContactSheet() - Create grid layout with configurable columns, padding, borders
+- ✅ DrawHeader() - Generate header with file metadata (filename, dimensions, duration, codec, fps, bitrate)
+- ✅ AddTimestamp() - Overlay timestamps on thumbnails with configurable opacity
+- ✅ ApplyWatermark() - Apply watermarks to center or all thumbnails
+- ✅ Customizable colors, fonts, and styling
 
-#### ❌ Content Detection (ContentDetectionService.cs) **Priority: MEDIUM**
+#### ✅ Image Filtering (FilterService.cs)
 
-```csharp
-// Services/ContentDetectionService.cs - Frame analysis
-- IsBlankFrame(image, threshold) using histogram analysis
-- IsBlurryFrame(image, threshold) using Laplacian variance
-- IsSafeForWork(image) - basic content filtering
-- FindBestFrame(candidates, skipBlank, skipBlurry)
-```
+`Services/FilterService.cs` - All filter implementations:
 
-#### ❌ Output Management (OutputService.cs) **Priority: HIGH**
+- ✅ ApplyFilters() - Filter chaining support
+- ✅ Greyscale, Sepia, Invert filters
+- ✅ Fancy filter (random rotation)
+- ✅ Cross-processing effect
+- ✅ Strip filter (film strip with sprocket holes)
 
-```csharp
-// Services/OutputService.cs - File handling and export
-- SaveContactSheet(image, outputPath, options)
-- SaveIndividualImages(images, outputPattern, options)
-- GenerateWebVTT(timestamps, imagePath, dimensions)
-- HandleFileOverwrite(path, overwrite, skipExisting)
-```
+#### ✅ Content Detection (ContentDetectionService.cs)
+
+`Services/ContentDetectionService.cs` - Frame quality analysis:
+
+- ✅ IsBlankFrame() - Histogram analysis with configurable threshold
+- ✅ IsBlurryFrame() - Laplacian variance for blur detection
+- ✅ IsSafeForWork() - Experimental skin tone detection
+- ✅ FindBestFrame() - Select best frame from candidates
+
+#### ✅ Output Management (OutputService.cs)
+
+`Services/OutputService.cs` - File handling and export:
+
+- ✅ SaveContactSheetAsync() - Save contact sheets in JPEG/PNG formats
+- ✅ SaveIndividualImagesAsync() - Save individual thumbnail images
+- ✅ GenerateWebVttAsync() - Generate WebVTT files with cue points
+- ✅ BuildOutputPath() - Filename pattern substitution ({{.Path}}, {{.Name}})
+- ✅ HandleFileOverwrite() - Overwrite/skip-existing logic
 
 #### ❌ Upload Service (UploadService.cs) **Priority: LOW**
 
 ```csharp
-// Services/UploadService.cs - HTTP upload functionality
+// Services/UploadService.cs - HTTP upload functionality (NOT YET IMPLEMENTED)
 - UploadFile(filePath, uploadUrl, options)
 - CreateMultipartFormData(file, metadata)
 - HandleUploadProgress(callback)
 - RetryUpload(file, maxRetries)
 ```
 
-### 🚧 Integration Tasks
+### ✅ Integration Complete
 
-#### ❌ Main Processing Pipeline
+#### ✅ Main Processing Pipeline
 
-**File**: `Commands/RootCommand.cs` (update SetAction)
+`Commands/RootCommand.cs` - Fully integrated async processing pipeline:
 
-```csharp
-1. Validate input file using FileValidator
-2. Load configuration from files/environment
-3. Extract video metadata using VideoProcessor  
-4. Generate timestamps based on options
-5. Extract frames using VideoProcessor
-6. Apply content detection filters
-7. Apply image filters using FilterService
-8. Create contact sheet using ImageComposer
-9. Save output using OutputService
-10. Generate WebVTT if requested
-11. Upload files if requested
-```
+1. ✅ Validate input file
+2. ✅ Extract video metadata using VideoProcessor
+3. ✅ Generate timestamps based on options
+4. ✅ Extract frames with content detection (skip blank/blurry/NSFW)
+5. ✅ Apply image filters using FilterService
+6. ✅ Create contact sheet using ImageComposer
+7. ✅ Apply watermarks if specified
+8. ✅ Save output using OutputService
+9. ✅ Generate WebVTT if requested
+10. ✅ Comprehensive error handling and progress reporting
+11. ❌ Upload files (not yet implemented)
 
-#### ❌ Error Handling & Logging
+#### ✅ Error Handling & Progress
 
-- Comprehensive error handling for FFmpeg operations
-- Progress reporting for long operations
-- Detailed logging using Serilog with verbosity levels
-- User-friendly error messages
+- ✅ Try-catch blocks for FFmpeg operations
+- ✅ Console progress reporting during frame extraction
+- ✅ User-friendly error messages with optional verbose stack traces
+- ✅ Proper resource cleanup (image disposal)
 
-#### ❌ Configuration Enhancements
+#### 🚧 Configuration Enhancements (Partial)
 
-- Save configuration to JSON files (--save-config)
-- Load custom configuration files (--config-file)
-- Show current configuration (--show-config)
-- Environment variable support with MT_ prefix
+- ❌ Save configuration to JSON files (--save-config) - placeholder only
+- ❌ Load custom configuration files (--config-file) - placeholder only
+- ❌ Show current configuration (--show-config) - placeholder only
+- ❌ Environment variable support with MT_ prefix - not yet implemented
 
-## Implementation Priority
+## Implementation Status Summary
 
-### Phase 1: Core Video Processing (Immediate)
+### ✅ Phase 1: Core Video Processing - COMPLETE
 
-1. **VideoProcessor.cs** - Frame extraction and metadata
-2. **ImageComposer.cs** - Basic contact sheet creation
-3. **OutputService.cs** - File saving and management
-4. **Integration** - Wire up the main processing pipeline
+1. ✅ **VideoProcessor.cs** - Frame extraction and metadata
+2. ✅ **ImageComposer.cs** - Contact sheet creation with headers and timestamps
+3. ✅ **OutputService.cs** - File saving and WebVTT generation
+4. ✅ **Integration** - Fully wired main processing pipeline
 
-### Phase 2: Image Enhancement (Soon)
+### ✅ Phase 2: Image Enhancement - COMPLETE
 
-1. **FilterService.cs** - All image filters from original
-2. **ContentDetectionService.cs** - Blank/blur detection
-3. **Enhanced timestamps and headers**
+1. ✅ **FilterService.cs** - All image filters from original (greyscale, sepia, invert, fancy, cross, strip)
+2. ✅ **ContentDetectionService.cs** - Blank/blur detection with configurable thresholds
+3. ✅ **Enhanced timestamps and headers** - Full metadata display support
 
-### Phase 3: Advanced Features (Later)
+### 🚧 Phase 3: Advanced Features - PARTIAL
 
-1. **UploadService.cs** - HTTP upload functionality
-2. **WebVTT generation** - HTML5 video player support
-3. **Configuration management** - Save/load config files
-4. **Performance optimizations**
+1. ❌ **UploadService.cs** - HTTP upload functionality (not started)
+2. ✅ **WebVTT generation** - HTML5 video player support (complete)
+3. ❌ **Configuration management** - Save/load config files (placeholders only)
+4. ⏳ **Performance optimizations** - To be evaluated after testing
+
+## Next Steps
+
+### Immediate Testing Needed
+
+1. **Test with real video files** - Verify end-to-end functionality
+2. **FFmpeg availability check** - Ensure FFmpeg is installed and accessible
+3. **Cross-platform testing** - Test on Windows, macOS, Linux
+4. **Edge case handling** - Test with various video formats, corrupted files, missing codecs
+
+### Future Enhancements (Post-Testing)
+
+1. **UploadService.cs** - Implement HTTP upload functionality
+2. **Configuration persistence** - Implement --save-config, --config-file, --show-config
+3. **Enhanced logging** - Integrate Serilog with configurable verbosity levels
+4. **Performance profiling** - Optimize frame extraction and image processing
+5. **Unit tests** - Add comprehensive test coverage
+6. **Documentation** - Add usage examples, troubleshooting guide
 
 ## Key Reference Files
 
@@ -196,9 +210,43 @@ dotnet run -- --help     # Show all options
 - Test all filter combinations and edge cases
 - Performance testing with large videos
 
-## Notes for Future Development
+## Architecture Notes
 
-- The CLI interface is complete and matches the original exactly
-- All business logic classes are designed and ready for implementation  
-- FFMpegCore and ImageSharp provide the core capabilities needed
-- Focus on VideoProcessor.cs first - it's the foundation for everything else
+### Service Layer Design
+
+All services are stateless and can be instantiated on-demand:
+
+- **VideoProcessor** - Handles FFmpeg interactions via FFMpegCore
+- **ImageComposer** - Pure image manipulation using ImageSharp
+- **FilterService** - Applies visual effects to images
+- **ContentDetectionService** - Analyzes image quality metrics
+- **OutputService** - File I/O and path management
+
+### Processing Pipeline Flow
+
+```plaintext
+Input Video → VideoProcessor.GetMetadata()
+           → VideoProcessor.CalculateTimestamps()
+           → VideoProcessor.ExtractFrames() (with ContentDetection)
+           → FilterService.ApplyFilters()
+           → ImageComposer.CreateContactSheet()
+           → ImageComposer.ApplyWatermark()
+           → OutputService.SaveContactSheet()
+           → OutputService.GenerateWebVtt() [optional]
+```
+
+### Key Implementation Details
+
+- **Async/Await**: All I/O operations are async for better performance
+- **Resource Management**: Images are properly disposed after processing
+- **Error Handling**: Try-catch blocks with user-friendly error messages
+- **Progress Reporting**: Console output during long-running operations
+- **Retry Logic**: Frame extraction retries up to 3 times for content detection
+
+### Testing Requirements
+
+- ✅ Project builds successfully (only 1 minor warning)
+- ⏳ End-to-end testing with real video files needed
+- ⏳ FFmpeg must be installed and in PATH
+- ⏳ Test various video formats (MP4, AVI, MKV, etc.)
+- ⏳ Test edge cases (short videos, long videos, corrupted files)

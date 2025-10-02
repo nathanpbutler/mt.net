@@ -1,4 +1,4 @@
-namespace MtNet.Utilities;
+namespace nathanbutlerDEV.mt.net.Utilities;
 
 public static class FileValidator
 {

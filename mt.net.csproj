@@ -5,6 +5,16 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Namespace: MT.NET -->
+    <RootNamespace>nathanbutlerDEV.mt.net</RootNamespace>
+    <AssemblyName>mt</AssemblyName>
+    <Version>1.0.85</Version>
+    <!-- Publish single file -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,7 +26,9 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.9" />
     <PackageReference Include="Serilog" Version="4.3.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="SixLabors.Fonts" Version="2.1.3" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-rc.1.25451.107" />
   </ItemGroup>
 
@@ -29,22 +41,13 @@
     </PropertyGroup>
 
     <!-- Windows -->
-    <Copy
-      SourceFiles="$(FullAppHostWindows)"
-      DestinationFiles="$(OutputPath)$(ShortExeNameWindows)"
-      Condition="'$(OS)' == 'Windows_NT' and Exists('$(FullAppHostWindows)')"
-      SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(FullAppHostWindows)" DestinationFiles="$(OutputPath)$(ShortExeNameWindows)" Condition="'$(OS)' == 'Windows_NT' and Exists('$(FullAppHostWindows)')" SkipUnchangedFiles="true" />
 
     <!-- macOS / Linux -->
-    <Copy
-      SourceFiles="$(FullAppHostUnix)"
-      DestinationFiles="$(OutputPath)$(ShortExeNameUnix)"
-      Condition="'$(OS)' != 'Windows_NT' and Exists('$(FullAppHostUnix)')"
-      SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(FullAppHostUnix)" DestinationFiles="$(OutputPath)$(ShortExeNameUnix)" Condition="'$(OS)' != 'Windows_NT' and Exists('$(FullAppHostUnix)')" SkipUnchangedFiles="true" />
 
     <!-- Ensure executable bit on Unix -->
-    <Exec Command="chmod +x &quot;$(OutputPath)$(ShortExeNameUnix)&quot;"
-          Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutputPath)$(ShortExeNameUnix)')" />
+    <Exec Command="chmod +x &quot;$(OutputPath)$(ShortExeNameUnix)&quot;" Condition="'$(OS)' != 'Windows_NT' and Exists('$(OutputPath)$(ShortExeNameUnix)')" />
   </Target>
 
 </Project>

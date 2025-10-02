@@ -1,9 +1,14 @@
 using SixLabors.ImageSharp;
 
-namespace MtNet.Utilities;
+namespace nathanbutlerDEV.mt.net.Utilities;
 
 public static class ColorParser
 {
+    public static Color ParseRgb(string rgbString, Color defaultColor = default)
+    {
+        return ParseRgbString(rgbString, defaultColor);
+    }
+
     public static Color ParseRgbString(string rgbString, Color defaultColor = default)
     {
         if (string.IsNullOrWhiteSpace(rgbString))
