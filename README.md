@@ -153,6 +153,7 @@ The application supports configuration through:
 - **Project Structure**: Organized codebase with proper separation of concerns
 - **Dependencies**: All required NuGet packages integrated
 - **Command-Line Interface**: 100% feature parity with original Go implementation (40+ options)
+  - ✅ **Bug Fix (Oct 2025)**: Resolved `-c` alias conflict (now only `--columns` uses `-c`)
 - **Configuration System**: JSON config support with environment variables and CLI overrides
 - **Video Processing**: Complete FFmpeg integration for metadata extraction and frame capture
 - **Image Composition**: Full contact sheet creation with headers, timestamps, and watermarks
@@ -160,13 +161,19 @@ The application supports configuration through:
 - **Content Detection**: Blank and blur frame detection with configurable thresholds
 - **Output Management**: File handling, WebVTT generation, and multiple output formats
 - **Processing Pipeline**: Fully integrated async workflow with progress reporting
+- **Testing**: Verified with real video files, layout working correctly
+
+### ⚠️ Known Limitations
+
+- **Fast Seeking Performance**: The `--fast` option is implemented using `-noaccurate_seek` but doesn't achieve the same performance as the original Go implementation
+  - FFMpegCore's high-level API has limited control over frame-level seeking behavior
+  - **Future Enhancement**: Migrate to FFmpeg.AutoGen for direct libavcodec control (see roadmap below)
 
 ### 🚧 In Development / Not Yet Implemented
 
 - **Upload Functionality**: HTTP upload feature (placeholder only)
 - **Configuration Persistence**: --save-config, --config-file, --show-config (placeholders only)
 - **Enhanced Logging**: Serilog integration for structured logging
-- **Testing**: End-to-end testing with real video files needed
 
 ### ⚠️ Prerequisites
 
@@ -234,6 +241,27 @@ mt.net/
 ## License
 
 This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+
+## Future Roadmap
+
+### High Priority
+
+1. **FFmpeg.AutoGen Migration** - Migrate from FFMpegCore to FFmpeg.AutoGen for better performance
+   - Enable true fast seeking behavior matching the original Go implementation
+   - Provide direct control over libavcodec/libavformat for frame-level seeking
+   - The original Go tool uses `screengen` library with fine-grained control over frame decoding
+
+### Medium Priority
+
+1. **Upload Service** - Implement HTTP upload functionality for generated contact sheets
+2. **Configuration Management** - Implement save/load configuration file features
+3. **Enhanced Logging** - Integrate Serilog for structured, configurable logging
+
+### Low Priority
+
+1. **Unit Testing** - Add comprehensive test coverage
+2. **Documentation** - Expand usage examples and troubleshooting guides
+3. **Performance Profiling** - Optimize image processing and filter operations
 
 ## Acknowledgments
 

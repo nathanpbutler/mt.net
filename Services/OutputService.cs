@@ -162,8 +162,9 @@ public class OutputService
         var videoName = Path.GetFileNameWithoutExtension(videoPath);
 
         // Simple pattern replacement
+        // Note: If pattern contains {{.Path}}, ensure proper path separator after directory
         var output = pattern
-            .Replace("{{.Path}}", videoDir)
+            .Replace("{{.Path}}", string.IsNullOrEmpty(videoDir) ? "" : videoDir + Path.DirectorySeparatorChar)
             .Replace("{{.Name}}", videoName);
 
         // If pattern doesn't contain path info, use video directory

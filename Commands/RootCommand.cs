@@ -22,7 +22,6 @@ public static class RootCommandBuilder
         {
             Description = "Configuration file path"
         };
-        configOption.Aliases.Add("-c");
 
         var verboseOption = new Option<bool>("--verbose")
         {

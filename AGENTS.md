@@ -36,14 +36,14 @@ dotnet run -- --filters  # Show available filters
 dotnet run -- --help     # Show all options
 ```
 
-## Current Project Status (✅ = Complete, 🚧 = In Progress, ❌ = Not Started)
+## Current Project Status (✅ = Complete, ⚠️ = Partial/Needs Work, 🚧 = In Progress, ❌ = Not Started)
 
 ### ✅ Foundation Complete
 
 - **Project Structure**: Organized folders for Commands, Configuration, Models, Services, Utilities
 - **Dependencies**: All required NuGet packages added
   - System.CommandLine (CLI parsing)
-  - FFMpegCore (video processing)
+  - FFMpegCore (video processing) ⚠️ *See note about FFmpeg.AutoGen migration below*
   - SixLabors.ImageSharp (image manipulation)
   - SixLabors.ImageSharp.Drawing (drawing operations)
   - SixLabors.Fonts (text rendering)
@@ -53,10 +53,11 @@ dotnet run -- --help     # Show all options
 ### ✅ Command-Line Interface Complete
 
 - **100% Feature Parity**: All 40+ options from original Go implementation
-- **Direct File Interface**: `mt.net video.mp4 [options]` (matches original behavior)
+- **Direct File Interface**: `mt video.mp4 [options]` (matches original behavior)
 - **Comprehensive Options**: Basic, time, visual, processing, upload, WebVTT, configuration options
 - **Help System**: Built-in help with descriptions, defaults, and examples
 - **Option Parsing**: Complete ThumbnailOptions object creation from CLI args
+- **✅ Bug Fix (Oct 2025)**: Resolved `-c` alias conflict between `--config` and `--columns` (removed `-c` from `--config`, kept it for `--columns` to match original mt behavior)
 
 ### ✅ Configuration System
 
@@ -66,7 +67,7 @@ dotnet run -- --help     # Show all options
 
 ### ✅ Core Services Implementation Complete
 
-#### ✅ Video Processing (VideoProcessor.cs)
+#### ⚠️ Video Processing (VideoProcessor.cs)
 
 `Services/VideoProcessor.cs` - Fully implemented video processing logic:
 
@@ -74,7 +75,10 @@ dotnet run -- --help     # Show all options
 - ✅ CalculateTimestamps() - Calculate timestamps based on numCaps, interval, from, to, skipCredits
 - ✅ ExtractFramesAsync() - Extract frames at calculated timestamps
 - ✅ ExtractFrameWithRetriesAsync() - Extract frames with retry logic for content detection
-- ✅ Support for fast vs accurate seeking modes
+- ⚠️ **Fast seeking support** - Partially implemented using `-noaccurate_seek` flag
+  - Current implementation uses FFMpegCore which has limited control over frame-level seeking behavior
+  - `--fast` option adds `-noaccurate_seek` flag but doesn't provide same performance as original Go implementation
+  - **Recommendation**: Migrate to FFmpeg.AutoGen for direct libavcodec control (see "Future Enhancements" below)
 
 #### ✅ Image Composition (ImageComposer.cs)
 
@@ -177,7 +181,8 @@ dotnet run -- --help     # Show all options
 1. ❌ **UploadService.cs** - HTTP upload functionality (not started)
 2. ✅ **WebVTT generation** - HTML5 video player support (complete)
 3. ❌ **Configuration management** - Save/load config files (placeholders only)
-4. ⏳ **Performance optimizations** - To be evaluated after testing
+4. ⚠️ **Fast seeking optimization** - Implemented with `-noaccurate_seek` but not as performant as original
+5. ⏳ **Performance optimizations** - To be evaluated after testing
 
 ## Next Steps
 
@@ -190,12 +195,22 @@ dotnet run -- --help     # Show all options
 
 ### Future Enhancements (Post-Testing)
 
-1. **UploadService.cs** - Implement HTTP upload functionality
-2. **Configuration persistence** - Implement --save-config, --config-file, --show-config
-3. **Enhanced logging** - Integrate Serilog with configurable verbosity levels
-4. **Performance profiling** - Optimize frame extraction and image processing
-5. **Unit tests** - Add comprehensive test coverage
-6. **Documentation** - Add usage examples, troubleshooting guide
+1. **FFmpeg.AutoGen Migration** ⚠️ *HIGH PRIORITY for performance*
+   - Migrate from FFMpegCore to FFmpeg.AutoGen for direct libavcodec/libavformat control
+   - This will enable true fast seeking behavior matching the original Go implementation
+   - Original uses `screengen` library with `gen.Fast` flag that controls frame-level seeking:
+     - `Fast = true`: Accept first decoded frame (keyframe-based, very fast)
+     - `Fast = false`: Continue decoding until exact timestamp (frame-accurate, slower)
+   - FFMpegCore's high-level API doesn't expose this level of control
+   - FFmpeg.AutoGen provides P/Invoke bindings to native FFmpeg libraries with full control
+   - Reference implementation: `reference/original-mt/` uses gitlab.com/opennota/screengen (similar to FFmpeg.AutoGen approach)
+
+2. **UploadService.cs** - Implement HTTP upload functionality
+3. **Configuration persistence** - Implement --save-config, --config-file, --show-config
+4. **Enhanced logging** - Integrate Serilog with configurable verbosity levels
+5. **Performance profiling** - Optimize frame extraction and image processing
+6. **Unit tests** - Add comprehensive test coverage
+7. **Documentation** - Add usage examples, troubleshooting guide
 
 ## Key Reference Files
 
@@ -245,8 +260,9 @@ Input Video → VideoProcessor.GetMetadata()
 
 ### Testing Requirements
 
-- ✅ Project builds successfully (only 1 minor warning)
-- ⏳ End-to-end testing with real video files needed
-- ⏳ FFmpeg must be installed and in PATH
-- ⏳ Test various video formats (MP4, AVI, MKV, etc.)
-- ⏳ Test edge cases (short videos, long videos, corrupted files)
+- ✅ Project builds successfully (clean build, no warnings)
+- ✅ FFmpeg installed and accessible in PATH
+- ✅ Column layout fix verified (4 columns working correctly)
+- ⚠️ Fast seeking implemented but performance not matching original (see FFmpeg.AutoGen migration note)
+- ⏳ Test various video formats (MP4, AVI, MKV, etc.) - needs more coverage
+- ⏳ Test edge cases (short videos, long videos, corrupted files) - needs testing

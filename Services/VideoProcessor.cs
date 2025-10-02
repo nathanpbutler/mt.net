@@ -125,17 +125,18 @@ public class VideoProcessor
             using var memoryStream = new MemoryStream();
 
             // Configure FFmpeg arguments for frame extraction
+            // Fast mode: Use -noaccurate_seek for keyframe-based seeking (faster, less accurate)
+            // Accurate mode: Use default accurate seeking (slower, frame-accurate)
             var success = await FFMpegArguments
                 .FromFileInput(videoPath, verifyExists: true, args =>
                 {
-                    // Use accurate seeking by default, fast seeking if requested
+                    args.Seek(timestamp);
+
+                    // In fast mode, disable accurate seeking to use keyframe-based seeking
+                    // This is faster but may not land on the exact frame
                     if (options.Fast)
                     {
-                        args.Seek(timestamp); // Fast seek (less accurate)
-                    }
-                    else
-                    {
-                        args.Seek(timestamp); // Accurate seek
+                        args.WithCustomArgument("-noaccurate_seek");
                     }
                 })
                 .OutputToPipe(new StreamPipeSink(memoryStream), options =>
