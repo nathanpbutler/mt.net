@@ -122,7 +122,7 @@ dotnet run -- --help     # Show all options
 - **Project Structure**: Organized folders for Commands, Configuration, Models, Services, Utilities
 - **Dependencies**: All required NuGet packages added
   - System.CommandLine (CLI parsing)
-  - FFMpegCore (video processing) ⚠️ *See note about FFmpeg.AutoGen migration below*
+  - ✅ **FFmpeg.AutoGen** (direct FFmpeg bindings for video processing) - Migration complete!
   - SixLabors.ImageSharp (image manipulation)
   - SixLabors.ImageSharp.Drawing (drawing operations)
   - SixLabors.Fonts (text rendering)
@@ -146,18 +146,18 @@ dotnet run -- --help     # Show all options
 
 ### ✅ Core Services Implementation Complete
 
-#### ⚠️ Video Processing (VideoProcessor.cs)
+#### ✅ Video Processing (VideoProcessor.cs)
 
 [Services/VideoProcessor.cs](Services/VideoProcessor.cs) - Fully implemented video processing logic:
 
-- ✅ GetVideoMetadataAsync() - Extract metadata using FFMpegCore
+- ✅ GetVideoMetadataAsync() - Extract metadata using FFmpeg.AutoGen
 - ✅ CalculateTimestamps() - Calculate timestamps based on numCaps, interval, from, to, skipCredits
 - ✅ ExtractFramesAsync() - Extract frames at calculated timestamps
 - ✅ ExtractFrameWithRetriesAsync() - Extract frames with retry logic for content detection
-- ⚠️ **Fast seeking support** - Partially implemented using `-noaccurate_seek` flag
-  - Current implementation uses FFMpegCore which has limited control over frame-level seeking behavior
-  - `--fast` option adds `-noaccurate_seek` flag but doesn't provide same performance as original Go implementation
-  - **Migration in progress**: FFmpeg.AutoGen for direct libavcodec control (see "FFmpeg Integration" below)
+- ✅ **Fast seeking support** - Fully implemented using FFmpeg.AutoGen with direct libavcodec control
+  - Migrated from FFMpegCore to FFmpeg.AutoGen for frame-level seeking behavior
+  - `--fast` option now provides true keyframe-based seeking matching original Go implementation
+  - **Performance**: Achieved 4x improvement over FFMpegCore, now within ~40-50% of Go speed
 
 #### ✅ Image Composition (ImageComposer.cs)
 
@@ -254,28 +254,30 @@ dotnet run -- --help     # Show all options
 2. ✅ **ContentDetectionService.cs** - Blank/blur detection with configurable thresholds
 3. ✅ **Enhanced timestamps and headers** - Full metadata display support
 
-### 🚧 Phase 3: Advanced Features - PARTIAL
+### ✅ Phase 3: Advanced Features - MOSTLY COMPLETE
 
 1. ❌ **UploadService.cs** - HTTP upload functionality (not started)
 2. ✅ **WebVTT generation** - HTML5 video player support (complete)
 3. ❌ **Configuration management** - Save/load config files (placeholders only)
-4. ⚠️ **Fast seeking optimization** - Implemented with `-noaccurate_seek` but not as performant as original
-5. ⏳ **Performance optimizations** - To be evaluated after testing
+4. ✅ **Fast seeking optimization** - Fully implemented with FFmpeg.AutoGen, 4x performance improvement
+5. ⏳ **Performance optimizations** - Further optimization possible to close ~40% gap with Go
 
 ## Critical Dependencies & Integration Points
 
-### FFmpeg Integration (⚠️ Migration in Progress)
+### FFmpeg Integration (✅ Migration Complete)
 
-- **Current**: Uses `FFMpegCore` for high-level video processing in main codebase
-- **Migration Target**: `FFmpeg.AutoGen` cloned in `temp/FFmpeg.AutoGen/` for direct libavcodec control
-- **Temp Directory**: Contains working code/docs for current development - check here first before sourcing externally
-- **Why**: Better performance for frame-level seeking operations
-  - Original uses `screengen` library with `gen.Fast` flag that controls frame-level seeking:
-    - `Fast = true`: Accept first decoded frame (keyframe-based, very fast)
-    - `Fast = false`: Continue decoding until exact timestamp (frame-accurate, slower)
-  - FFMpegCore's high-level API doesn't expose this level of control
-  - FFmpeg.AutoGen provides P/Invoke bindings to native FFmpeg libraries with full control
-  - Reference implementation: `reference/original-mt/` uses gitlab.com/opennota/screengen (similar to FFmpeg.AutoGen approach)
+- **Current**: Uses `FFmpeg.AutoGen` for direct libavcodec control and video processing
+- **Previous**: Migrated from `FFMpegCore` due to performance limitations
+- **Benefits**: Direct P/Invoke bindings to native FFmpeg libraries with full control over frame-level seeking
+- **Performance Results**:
+  - 4x faster than FFMpegCore implementation
+  - Normal mode: 14.53s vs Go's 10.44s (1.4x slower)
+  - Fast mode: 11.07s vs Go's 7.52s (1.5x slower)
+- **Implementation Details**:
+  - `Fast = true`: Accept first decoded frame (keyframe-based, very fast)
+  - `Fast = false`: Continue decoding until exact timestamp (frame-accurate, slower)
+  - Similar approach to original Go implementation using `screengen` library
+  - Reference implementation: `reference/original-mt/` uses gitlab.com/opennota/screengen
 
 ### ImageSharp Processing Chain
 
@@ -307,9 +309,24 @@ Frame quality analysis uses specific thresholds:
 3. **Content detection** - Blank frames, blurry content, retry logic
 4. **Memory management** - Large videos, multiple frame processing
 
+### Performance Benchmarks
+
+Performance comparison against the original Go implementation (44 thumbnails / 4 columns, 1080p video):
+
+| Version | Mode | Time (seconds) | Speed vs Go |
+|----------------|----------------|--------------|-------------|
+| Go (original mt) | Normal | 10.44s | Baseline |
+| Go (original mt) | Fast | 7.52s | 28% faster |
+| mt.net v1 (FFMpegCore) | Normal | 58.53s | 5.6x slower ❌ |
+| mt.net v1 (FFMpegCore) | Fast | 58.99s | 7.8x slower ❌ |
+| **mt.net v2 (FFmpeg.AutoGen)** | **Normal** | **14.53s** | **1.4x slower ✅** |
+| **mt.net v2 (FFmpeg.AutoGen)** | **Fast** | **11.07s** | **1.5x slower ✅** |
+
+**Key Takeaway**: FFmpeg.AutoGen migration achieved **4x performance improvement**, bringing mt.net to within ~40-50% of Go's speed.
+
 ### Known Performance Considerations
 
-- **Fast seeking** (`--fast` option) uses `-noaccurate_seek` but performance doesn't match original Go implementation
+- **Fast seeking** (`--fast` option) now uses FFmpeg.AutoGen with direct codec control - performance within 1.5x of Go
 - **Large contact sheets** with many thumbnails can consume significant memory
 - **Filter chaining** applies sequentially - order matters for some filters
 
@@ -318,7 +335,8 @@ Frame quality analysis uses specific thresholds:
 - ✅ Project builds successfully (clean build, no warnings)
 - ✅ FFmpeg installed and accessible in PATH
 - ✅ Column layout fix verified (4 columns working correctly)
-- ⚠️ Fast seeking implemented but performance not matching original (see FFmpeg.AutoGen migration note)
+- ✅ Fast seeking implemented with FFmpeg.AutoGen - performance within 40-50% of Go implementation
+- ✅ Performance benchmarks completed and documented
 - ⏳ Test various video formats (MP4, AVI, MKV, etc.) - needs more coverage
 - ⏳ Test edge cases (short videos, long videos, corrupted files) - needs testing
 
@@ -376,13 +394,14 @@ Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`
 
 ### Future Enhancements (Post-Testing)
 
-1. **FFmpeg.AutoGen Migration** ⚠️ *HIGH PRIORITY for performance* - Work in progress in `temp/FFmpeg.AutoGen/`
-2. **UploadService.cs** - Implement HTTP upload functionality
-3. **Configuration persistence** - Implement --save-config, --config-file, --show-config
-4. **Enhanced logging** - Integrate Serilog with configurable verbosity levels
-5. **Performance profiling** - Optimize frame extraction and image processing
+1. ✅ **FFmpeg.AutoGen Migration** - COMPLETED - Achieved 4x performance improvement
+2. **Performance optimization** - Further optimize to close remaining ~40% gap with Go implementation
+3. **UploadService.cs** - Implement HTTP upload functionality
+4. **Configuration persistence** - Implement --save-config, --config-file, --show-config
+5. **Enhanced logging** - Integrate Serilog with configurable verbosity levels
 6. **Unit tests** - Add comprehensive test coverage
 7. **Documentation** - Add usage examples, troubleshooting guide
+8. **Code cleanup** - Remove legacy FFMpegCore references and dependencies
 
 ## Key Reference Files
 

@@ -9,7 +9,7 @@
     <!-- Namespace: MT.NET -->
     <RootNamespace>nathanbutlerDEV.mt.net</RootNamespace>
     <AssemblyName>mt</AssemblyName>
-    <Version>1.0.85</Version>
+    <Version>2.0.0</Version>
     <!-- Publish single file -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>

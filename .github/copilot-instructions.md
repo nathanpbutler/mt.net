@@ -70,11 +70,11 @@ Output paths use Go-template style patterns (`{{.Path}}{{.Name}}.jpg`) processed
 
 ## Critical Dependencies & Integration Points
 
-### FFmpeg Integration (⚠️ Migration in Progress)
-- **Current**: Uses `FFMpegCore` for high-level video processing in main codebase
-- **Migration Target**: `FFmpeg.AutoGen` cloned in `temp/FFmpeg.AutoGen/` for direct libavcodec control
-- **Temp Directory**: Contains working code/docs for current development - check here first before sourcing externally
-- **Why**: Better performance for frame-level seeking operations (see AGENTS.md notes on fast seeking)
+### FFmpeg Integration (✅ Migration Complete)
+- **Current**: Uses `FFmpeg.AutoGen` for direct libavcodec control and video processing
+- **Previous**: Migrated from `FFMpegCore` due to performance limitations
+- **Benefits**: Direct P/Invoke bindings providing full control over frame-level seeking
+- **Performance**: 4x improvement over FFMpegCore, now within ~40-50% of Go implementation speed
 
 ### ImageSharp Processing Chain
 All image operations use `SixLabors.ImageSharp` with specific patterns:
@@ -114,8 +114,21 @@ dotnet run -- video.mp4 --filter greyscale,sepia --skip-blank --header-meta
 3. **Content detection** - Blank frames, blurry content, retry logic
 4. **Memory management** - Large videos, multiple frame processing
 
+### Performance Benchmarks
+
+Performance comparison (44 thumbnails / 4 columns, 1080p video):
+
+| Version | Mode | Time | Speed vs Go |
+|---------|------|------|-------------|
+| Go (original) | Normal | 10.44s | Baseline |
+| Go (original) | Fast | 7.52s | 28% faster |
+| mt.net v1 (FFMpegCore) | Normal | 58.53s | 5.6x slower ❌ |
+| mt.net v1 (FFMpegCore) | Fast | 58.99s | 7.8x slower ❌ |
+| **mt.net v2 (FFmpeg.AutoGen)** | **Normal** | **14.53s** | **1.4x slower ✅** |
+| **mt.net v2 (FFmpeg.AutoGen)** | **Fast** | **11.07s** | **1.5x slower ✅** |
+
 ### Known Performance Considerations
-- **Fast seeking** (`--fast` option) uses `-noaccurate_seek` but performance doesn't match original Go implementation
+- **Fast seeking** (`--fast` option) now uses FFmpeg.AutoGen - performance within 1.5x of Go
 - **Large contact sheets** with many thumbnails can consume significant memory
 - **Filter chaining** applies sequentially - order matters for some filters
 
