@@ -10,7 +10,7 @@ namespace nathanbutlerDEV.mt.net.Services;
 
 public class ImageComposer
 {
-    public Image<Rgba32> CreateContactSheet(
+    public static Image<Rgba32> CreateContactSheet(
         List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
         HeaderInfo headerInfo,
         ThumbnailOptions options)
@@ -152,7 +152,7 @@ public class ImageComposer
         return headerText;
     }
 
-    private void DrawHeader(
+    private static void DrawHeader(
         Image<Rgba32> canvas,
         HeaderInfo headerInfo,
         ThumbnailOptions options,
@@ -260,13 +260,6 @@ public class ImageComposer
         }
     }
 
-    private static string FormatDuration(TimeSpan duration)
-    {
-        return duration.Hours > 0
-            ? $"{duration.Hours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}"
-            : $"{duration.Minutes:D2}:{duration.Seconds:D2}";
-    }
-
     private static string FormatDurationForHeader(TimeSpan duration)
     {
         // Always use HH:MM:SS format for header to match mt
@@ -282,7 +275,7 @@ public class ImageComposer
     private static string FormatFileSize(long bytes)
     {
         // Use binary units (KiB, MiB, GiB) to match mt's output
-        string[] sizes = { "B", "KiB", "MiB", "GiB", "TiB" };
+        string[] sizes = ["B", "KiB", "MiB", "GiB", "TiB"];
         double len = bytes;
         int order = 0;
 

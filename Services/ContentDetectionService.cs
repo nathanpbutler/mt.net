@@ -6,7 +6,7 @@ namespace nathanbutlerDEV.mt.net.Services;
 
 public class ContentDetectionService
 {
-    public bool IsBlankFrame(Image<Rgba32> image, int threshold = 85)
+    public static bool IsBlankFrame(Image<Rgba32> image, int threshold = 85)
     {
         // Use histogram analysis to detect blank frames
         // Calculate average brightness and check if it's too uniform
@@ -24,7 +24,7 @@ public class ContentDetectionService
                 {
                     var pixel = pixelRow[x];
                     // Calculate perceived brightness
-                    var brightness = (pixel.R * 0.299 + pixel.G * 0.587 + pixel.B * 0.114);
+                    var brightness = pixel.R * 0.299 + pixel.G * 0.587 + pixel.B * 0.114;
                     totalBrightness += (long)brightness;
                 }
             }
@@ -60,7 +60,7 @@ public class ContentDetectionService
         return standardDeviation < uniformityThreshold;
     }
 
-    public bool IsBlurryFrame(Image<Rgba32> image, int threshold = 62)
+    public static bool IsBlurryFrame(Image<Rgba32> image, int threshold = 62)
     {
         // Use Laplacian variance to detect blur
         // Lower variance indicates more blur
@@ -78,7 +78,7 @@ public class ContentDetectionService
         return laplacianVariance < normalizedThreshold;
     }
 
-    private double CalculateLaplacianVariance(Image<Rgba32> grayscaleImage)
+    private static double CalculateLaplacianVariance(Image<Rgba32> grayscaleImage)
     {
         // Simplified Laplacian operator for blur detection
         var width = grayscaleImage.Width;
@@ -120,7 +120,7 @@ public class ContentDetectionService
         return variance;
     }
 
-    public bool IsSafeForWork(Image<Rgba32> image)
+    public static bool IsSafeForWork(Image<Rgba32> image)
     {
         // Basic skin tone detection as a simple SFW filter
         // This is experimental and not very accurate
@@ -153,7 +153,7 @@ public class ContentDetectionService
         return skinPercentage <= 40;
     }
 
-    private bool IsSkinTone(byte r, byte g, byte b)
+    private static bool IsSkinTone(byte r, byte g, byte b)
     {
         // Simple skin tone detection using RGB values
         // This is a very basic implementation
@@ -163,7 +163,7 @@ public class ContentDetectionService
                r - Math.Min(g, b) > 15;
     }
 
-    public Image<Rgba32>? FindBestFrame(
+    public static Image<Rgba32>? FindBestFrame(
         List<Image<Rgba32>> candidates,
         bool skipBlank,
         bool skipBlurry,

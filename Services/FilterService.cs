@@ -9,7 +9,7 @@ public class FilterService
 {
     private static readonly Random Random = new();
 
-    public void ApplyFilters(Image<Rgba32> image, string filterString)
+    public static void ApplyFilters(Image<Rgba32> image, string filterString)
     {
         if (string.IsNullOrEmpty(filterString) || filterString.Equals("none", StringComparison.OrdinalIgnoreCase))
         {
@@ -24,7 +24,7 @@ public class FilterService
         }
     }
 
-    private void ApplyFilter(Image<Rgba32> image, string filterName)
+    private static void ApplyFilter(Image<Rgba32> image, string filterName)
     {
         switch (filterName.ToLowerInvariant())
         {
@@ -112,20 +112,20 @@ public class FilterService
             for (int y = sprocketHeight / 2; y < image.Height; y += sprocketSpacing)
             {
                 // Left sprocket holes
-                ctx.FillPolygon(Color.White, new PointF[] {
+                ctx.FillPolygon(Color.White, [
                     new(holeX, y - holeRadius),
                     new(holeX + holeRadius, y),
                     new(holeX, y + holeRadius),
                     new(holeX - holeRadius, y)
-                });
+                ]);
 
                 // Right sprocket holes
-                ctx.FillPolygon(Color.White, new PointF[] {
+                ctx.FillPolygon(Color.White, [
                     new(image.Width - holeX, y - holeRadius),
                     new(image.Width - holeX + holeRadius, y),
                     new(image.Width - holeX, y + holeRadius),
                     new(image.Width - holeX - holeRadius, y)
-                });
+                ]);
             }
         });
     }

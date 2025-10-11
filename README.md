@@ -24,7 +24,7 @@ A .NET port of the Go-based media thumbnailing tool `mt` (media thumbnailer). Th
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/mt.net.git
+git clone https://github.com/nathanpbutler/mt.net.git
 cd mt.net
 dotnet build
 ```
@@ -328,4 +328,4 @@ This project is licensed under the GNU General Public License v3.0. See the [LIC
 
 ## Acknowledgments
 
-This project is based on the original `mt` tool written in Go. Thanks to the original developers for creating such a useful media processing utility.
+This project is based on the original `mt` tool written in Go. Thanks to the original developer for creating such a useful media processing utility.

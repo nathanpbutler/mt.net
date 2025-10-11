@@ -9,7 +9,7 @@ namespace nathanbutlerDEV.mt.net.Services;
 
 public class OutputService
 {
-    public async Task<string> SaveContactSheetAsync(
+    public static async Task<string> SaveContactSheetAsync(
         Image<Rgba32> image,
         string videoPath,
         ThumbnailOptions options)
@@ -62,7 +62,7 @@ public class OutputService
         }
     }
 
-    public async Task<List<string>> SaveIndividualImagesAsync(
+    public static async Task<List<string>> SaveIndividualImagesAsync(
         List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
         string videoPath,
         ThumbnailOptions options)
@@ -81,12 +81,12 @@ public class OutputService
 
         for (int i = 0; i < frames.Count; i++)
         {
-            var (frame, timestamp) = frames[i];
+            var (frame, _) = frames[i];
             var individualPath = Path.Combine(baseDir, $"{baseName}_{i + 1:D3}{extension}");
 
             try
             {
-                if (extension.ToLowerInvariant() == ".png")
+                if (extension.Equals(".png", StringComparison.InvariantCultureIgnoreCase))
                 {
                     await frame.SaveAsPngAsync(individualPath);
                 }
@@ -107,7 +107,7 @@ public class OutputService
         return savedPaths;
     }
 
-    public async Task<string> GenerateWebVttAsync(
+    public static async Task<string> GenerateWebVttAsync(
         List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
         string imagePath,
         string videoPath,
@@ -156,7 +156,7 @@ public class OutputService
         }
     }
 
-    private string BuildOutputPath(string videoPath, string pattern)
+    private static string BuildOutputPath(string videoPath, string pattern)
     {
         var videoDir = Path.GetDirectoryName(videoPath) ?? "";
         var videoName = Path.GetFileNameWithoutExtension(videoPath);
@@ -176,7 +176,7 @@ public class OutputService
         return output;
     }
 
-    private string FormatVttTimestamp(TimeSpan timestamp)
+    private static string FormatVttTimestamp(TimeSpan timestamp)
     {
         return $"{timestamp.Hours:D2}:{timestamp.Minutes:D2}:{timestamp.Seconds:D2}.{timestamp.Milliseconds:D3}";
     }

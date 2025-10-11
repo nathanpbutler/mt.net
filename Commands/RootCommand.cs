@@ -489,8 +489,16 @@ public static class RootCommandBuilder
         var videoProcessor = new VideoProcessor();
         var contentDetection = new ContentDetectionService();
         var filterService = new FilterService();
-        var imageComposer = new ImageComposer();
+
+        // Use environment variable to choose composer implementation
+        // MT_USE_FFMPEG=1 enables the new FFmpeg-based composer
+        var useFFmpegComposer = Environment.GetEnvironmentVariable("MT_USE_FFMPEG") == "1";
         var outputService = new OutputService();
+
+        if (options.Verbose)
+        {
+            Console.WriteLine($"Using {(useFFmpegComposer ? "FFmpeg.AutoGen" : "ImageSharp")} composer");
+        }
 
         // Step 1: Extract video metadata
         Console.WriteLine("Extracting video metadata...");
@@ -516,11 +524,11 @@ public static class RootCommandBuilder
                 options,
                 skipCondition: img =>
                 {
-                    if (options.SkipBlank && contentDetection.IsBlankFrame(img, options.BlankThreshold))
+                    if (options.SkipBlank && ContentDetectionService.IsBlankFrame(img, options.BlankThreshold))
                         return true;
-                    if (options.SkipBlurry && contentDetection.IsBlurryFrame(img, options.BlurThreshold))
+                    if (options.SkipBlurry && ContentDetectionService.IsBlurryFrame(img, options.BlurThreshold))
                         return true;
-                    if (options.Sfw && !contentDetection.IsSafeForWork(img))
+                    if (options.Sfw && !ContentDetectionService.IsSafeForWork(img))
                         return true;
                     return false;
                 },
@@ -541,13 +549,13 @@ public static class RootCommandBuilder
             return;
         }
 
-        // Step 4: Apply image filters
-        if (!string.IsNullOrEmpty(options.Filter) && options.Filter != "none")
+        // Step 4: Apply image filters (only for ImageSharp composer)
+        if (!useFFmpegComposer && !string.IsNullOrEmpty(options.Filter) && options.Filter != "none")
         {
             Console.WriteLine($"Applying filters: {options.Filter}");
             foreach (var (frame, _) in frames)
             {
-                filterService.ApplyFilters(frame, options.Filter);
+                FilterService.ApplyFilters(frame, options.Filter);
             }
         }
 
@@ -555,35 +563,50 @@ public static class RootCommandBuilder
         if (options.SingleImages)
         {
             Console.WriteLine("Saving individual images...");
-            await outputService.SaveIndividualImagesAsync(frames, videoPath, options);
+            await OutputService.SaveIndividualImagesAsync(frames, videoPath, options);
         }
         else
         {
             Console.WriteLine("Creating contact sheet...");
-            using var contactSheet = imageComposer.CreateContactSheet(frames, headerInfo, options);
 
-            // Apply watermarks if specified
-            if (!string.IsNullOrEmpty(options.Watermark))
+            // Choose composer implementation based on flag
+            SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32> contactSheet;
+            if (useFFmpegComposer)
             {
-                ImageComposer.ApplyWatermark(contactSheet, options.Watermark, center: true);
+                using var ffmpegComposer = new FFmpegFilterGraphComposer();
+                contactSheet = ffmpegComposer.CreateContactSheet(frames, headerInfo, options);
+            }
+            else
+            {
+                var imageComposer = new ImageComposer();
+                contactSheet = ImageComposer.CreateContactSheet(frames, headerInfo, options);
             }
 
-            if (!string.IsNullOrEmpty(options.WatermarkAll))
+            using (contactSheet)
             {
-                foreach (var (frame, _) in frames)
+                // Apply watermarks if specified
+                if (!string.IsNullOrEmpty(options.Watermark))
                 {
-                    ImageComposer.ApplyWatermark(frame, options.WatermarkAll, center: false);
+                    ImageComposer.ApplyWatermark(contactSheet, options.Watermark, center: true);
                 }
-            }
 
-            Console.WriteLine("Saving contact sheet...");
-            var outputPath = await outputService.SaveContactSheetAsync(contactSheet, videoPath, options);
+                if (!string.IsNullOrEmpty(options.WatermarkAll))
+                {
+                    foreach (var (frame, _) in frames)
+                    {
+                        ImageComposer.ApplyWatermark(frame, options.WatermarkAll, center: false);
+                    }
+                }
 
-            // Step 6: Generate WebVTT if requested
-            if (options.Vtt || options.WebVtt)
-            {
-                Console.WriteLine("Generating WebVTT file...");
-                await outputService.GenerateWebVttAsync(frames, outputPath, videoPath, options);
+                Console.WriteLine("Saving contact sheet...");
+                var outputPath = await OutputService.SaveContactSheetAsync(contactSheet, videoPath, options);
+
+                // Step 6: Generate WebVTT if requested
+                if (options.Vtt || options.WebVtt)
+                {
+                    Console.WriteLine("Generating WebVTT file...");
+                    await OutputService.GenerateWebVttAsync(frames, outputPath, videoPath, options);
+                }
             }
         }
 

@@ -2,10 +2,10 @@ namespace nathanbutlerDEV.mt.net.Utilities;
 
 public static class FileValidator
 {
-    private static readonly string[] SupportedVideoExtensions = {
+    private static readonly string[] SupportedVideoExtensions = [
         ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v", 
         ".mpg", ".mpeg", ".3gp", ".ogv", ".asf", ".rm", ".rmvb"
-    };
+    ];
 
     public static bool IsVideoFile(string filePath)
     {
