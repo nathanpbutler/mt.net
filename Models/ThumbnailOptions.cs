@@ -4,6 +4,7 @@ namespace nathanbutlerDEV.mt.net.Models;
 
 public class ThumbnailOptions
 {
+    public string Composer { get; set; } = "ffmpeg";
     public int NumCaps { get; set; } = 4;
     public int Columns { get; set; } = 2;
     public int Padding { get; set; } = 10;

@@ -261,7 +261,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             }
 
             // Create buffer source
-            var args = $"video_size={width}x{height}:pix_fmt={((int)AVPixelFormat.AV_PIX_FMT_RGBA)}:time_base=1/1000";
+            var args = $"video_size={width}x{height}:pix_fmt={(int)AVPixelFormat.AV_PIX_FMT_RGBA}:time_base=1/1000";
             var ret = ffmpeg.avfilter_graph_create_filter(bufferSrcCtx, bufferSrc, "in", args, null, filterGraph);
             if (ret < 0)
             {
@@ -667,7 +667,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             lines += 1; // Comment line
         }
 
-        return lineHeight * lines;
+        return lineHeight * lines + 5;
     }
 
     /// <summary>

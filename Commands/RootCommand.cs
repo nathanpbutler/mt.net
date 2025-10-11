@@ -34,6 +34,13 @@ public static class RootCommandBuilder
             Description = "Show version information"
         };
 
+        var composerOption = new Option<string>("--composer")
+        {
+            Description = "Choose image composer: ffmpeg, imagesharp",
+            CompletionSources = { "ffmpeg", "imagesharp" },
+            DefaultValueFactory = _ => "ffmpeg" // FFMpeg.AutoGen is now default
+        };
+
         // Basic thumbnail options
         var numCapsOption = new Option<int>("--numcaps")
         {
@@ -297,6 +304,7 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(configOption);
         rootCommand.Options.Add(verboseOption);
         rootCommand.Options.Add(versionOption);
+        rootCommand.Options.Add(composerOption);
         
         // Basic options
         rootCommand.Options.Add(numCapsOption);
@@ -386,6 +394,9 @@ public static class RootCommandBuilder
             // Build comprehensive options object
             var options = new ThumbnailOptions
             {
+                // Composer option
+                Composer = parseResult.GetValue(composerOption)!,
+                
                 // Basic options
                 NumCaps = parseResult.GetValue(numCapsOption),
                 Columns = parseResult.GetValue(columnsOption),
@@ -493,15 +504,11 @@ public static class RootCommandBuilder
         var videoProcessor = new VideoProcessor();
         var contentDetection = new ContentDetectionService();
         var filterService = new FilterService();
-
-        // Use environment variable to choose composer implementation
-        // MT_USE_FFMPEG=1 enables the new FFmpeg-based composer
-        var useFFmpegComposer = Environment.GetEnvironmentVariable("MT_USE_FFMPEG") == "1";
         var outputService = new OutputService();
 
         if (options.Verbose)
         {
-            Console.WriteLine($"Using {(useFFmpegComposer ? "FFmpeg.AutoGen" : "ImageSharp")} composer");
+            Console.WriteLine($"Using {(options.Composer == "ffmpeg" ? "FFmpeg.AutoGen" : "ImageSharp")} composer");
         }
 
         // Step 1: Extract video metadata
@@ -554,7 +561,7 @@ public static class RootCommandBuilder
         }
 
         // Step 4: Apply image filters (only for ImageSharp composer)
-        if (!useFFmpegComposer && !string.IsNullOrEmpty(options.Filter) && options.Filter != "none")
+        if (options.Composer != "ffmpeg" && !string.IsNullOrEmpty(options.Filter) && options.Filter != "none")
         {
             Console.WriteLine($"Applying filters: {options.Filter}");
             foreach (var (frame, _) in frames)
@@ -573,9 +580,9 @@ public static class RootCommandBuilder
         {
             Console.WriteLine("Creating contact sheet...");
 
-            // Choose composer implementation based on flag
+            // Choose composer implementation based on --composer option
             SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32> contactSheet;
-            if (useFFmpegComposer)
+            if (options.Composer == "ffmpeg")
             {
                 using var ffmpegComposer = new FFmpegFilterGraphComposer();
                 contactSheet = ffmpegComposer.CreateContactSheet(frames, headerInfo, options);

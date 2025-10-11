@@ -10,7 +10,8 @@
 The application uses a stateless service pattern with clear separation of concerns:
 
 - **VideoProcessor** (`Services/VideoProcessor.cs`) - FFmpeg integration for metadata extraction and frame capture
-- **ImageComposer** (`Services/ImageComposer.cs`) - Contact sheet creation, header generation, and timestamp overlays
+- **FFmpegFilterGraphComposer** (`Services/FFmpegFilterGraphComposer.cs`) - FFmpeg.AutoGen-based contact sheet creation with filter graphs (default)
+- **ImageComposer** (`Services/ImageComposer.cs`) - Legacy ImageSharp-based contact sheet creation (fallback via `--composer imagesharp`)
 - **FilterService** (`Services/FilterService.cs`) - Image processing filters (greyscale, sepia, strip effects, etc.)
 - **ContentDetectionService** (`Services/ContentDetectionService.cs`) - Frame quality analysis (blank/blur/NSFW detection)
 - **OutputService** (`Services/OutputService.cs`) - File I/O, WebVTT generation, and filename pattern substitution
@@ -27,6 +28,7 @@ Video Input → Extract Metadata → Calculate Timestamps → Extract Frames
 - **ThumbnailOptions** (`Models/ThumbnailOptions.cs`) - Single comprehensive options class with 40+ properties
 - **System.CommandLine** - Direct CLI option mapping to ThumbnailOptions properties
 - **Pattern**: Each CLI option maps to a ThumbnailOptions property with default values and aliases
+- **Composer Selection**: `--composer` option chooses between `ffmpeg` (default) and `imagesharp` (legacy)
 
 ## Key Development Patterns
 
@@ -76,14 +78,35 @@ Output paths use Go-template style patterns (`{{.Path}}{{.Name}}.jpg`) processed
 - **Benefits**: Direct P/Invoke bindings providing full control over frame-level seeking
 - **Performance**: 4x improvement over FFMpegCore, now within ~40-50% of Go implementation speed
 
-### ImageSharp Processing Chain
-All image operations use `SixLabors.ImageSharp` with specific patterns:
-- Load frames as `Image<Rgba32>`
-- Apply filters via `FilterService.ApplyFilters()`
-- Compose contact sheets with precise pixel calculations in `ImageComposer`
-- Text rendering via `SixLabors.Fonts` (differs slightly from FFmpeg's freetype)
+### Image Composition Pipeline
 
-**Note**: Font rendering produces slightly different text appearance than mt's freetype at the same font size. This is a cosmetic limitation of using different rendering engines.
+**Default (FFmpeg.AutoGen - Hybrid)**: Uses FFmpeg for frame operations, ImageSharp for final composition:
+
+**Per-Frame Processing (FFmpeg.AutoGen):**
+- Load frames as `Image<Rgba32>` from video
+- Convert ImageSharp → AVFrame
+- Process with FFmpeg filter graphs:
+  - `scale` filter (thumbnail resizing)
+  - `drawtext` filter (timestamps with freetype - pixel-perfect)
+  - `drawtext` filter (header text with freetype - pixel-perfect)
+  - `drawbox` filter (borders)
+- Apply filters via `FFmpegFilterService` (native FFmpeg filters)
+- Convert AVFrame → ImageSharp
+
+**Final Composition (ImageSharp):**
+- Create canvas with background color
+- Arrange processed frames in grid layout (DrawImage)
+- Position header
+- Apply watermarks
+
+**Legacy (ImageSharp)**: Available via `--composer imagesharp`:
+- Load frames as `Image<Rgba32>`
+- Resize with ImageSharp
+- Apply filters via `FilterService.ApplyFilters()`
+- Text rendering via `SixLabors.Fonts` (differs from freetype)
+- Compose contact sheets in `ImageComposer`
+
+**Key Difference**: FFmpeg composer achieves **pixel-perfect text** matching Go mt (freetype), while keeping grid layout simple in C#. ImageSharp composer uses different text engine.
 
 ### Content Detection Algorithms
 Frame quality analysis uses specific thresholds:
@@ -136,8 +159,7 @@ Performance comparison (44 thumbnails / 4 columns, 1080p video):
 - **Filter chaining** applies sequentially - order matters for some filters
 
 ### Known Limitations
-- **Font Rendering**: ImageSharp uses a different rendering engine than freetype (used by FFmpeg/mt), resulting in slightly different text appearance at the same font size
-- **Output Format Matching**: Header format, timestamps, and file sizes now match mt's output structure, but font rendering remains cosmetically different
+- **Font Rendering** (ImageSharp composer only): When using `--composer imagesharp`, text rendering uses a different engine than freetype, resulting in slightly different text appearance. The default FFmpeg composer provides pixel-perfect text rendering matching the original Go implementation.
 
 ## Project-Specific Conventions
 
@@ -180,11 +202,18 @@ Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`
 ## Reference Implementation
 The `reference/original-mt/` directory contains the complete Go implementation as a git submodule. When making changes that affect output compatibility, reference the Go implementation's behavior for consistency.
 
-## Future Considerations
+## Migration Status
 
-**Potential Migration to FFmpeg.AutoGen for Image Composition**
-- **Current**: Uses SixLabors.ImageSharp for contact sheet creation and text rendering
-- **Under Consideration**: Migrate to FFmpeg's filter graph (scale, drawtext, tile/xstack, overlay)
-- **Rationale**: Would provide pixel-perfect text rendering matching mt (uses freetype) and potentially better performance
-- **Tradeoff**: More complex implementation, harder to debug, significant refactoring effort
-- **Status**: ImageSharp works well for current needs; migration would be for exact visual parity with mt
+**✅ FFmpeg.AutoGen for Image Composition** - COMPLETED (v2.0 - Hybrid Approach)
+- **Status**: Fully implemented and set as default composer
+- **Implementation**: Hybrid approach combining FFmpeg.AutoGen and ImageSharp
+  - **FFmpeg.AutoGen**: Frame resizing, text rendering (freetype), borders, image filters
+  - **ImageSharp**: Grid layout, canvas creation, watermarks (simpler than FFmpeg xstack/tile)
+- **Benefits**:
+  - Pixel-perfect text rendering matching mt (uses freetype)
+  - Simple, maintainable grid layout code in C#
+  - Best of both worlds: exact rendering + clean architecture
+- **Why Hybrid**: Critical goal (pixel-perfect text) achieved while keeping code maintainable
+- **Access**: Use `--composer ffmpeg` (default) or `--composer imagesharp` (legacy fallback)
+- **Future**: Full FFmpeg migration possible but not necessary - current approach is optimal
+- **Migration Period**: ImageSharp composer kept temporarily as fallback, will be removed after testing period

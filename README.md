@@ -14,6 +14,14 @@ A .NET port of the Go-based media thumbnailing tool `mt` (media thumbnailer). Th
 - **Upload Functionality**: HTTP upload capabilities for generated images
 - **Comprehensive CLI**: Feature-complete command-line interface
 
+## Example Output
+
+<p align="center">
+  <img src="samples/rick.jpg" alt="Sample Contact Sheet">
+  <br>
+  <em>Example contact sheet generated from a video file</em>
+</p>
+
 ## Installation
 
 ### Prerequisites
@@ -151,6 +159,7 @@ The tool provides comprehensive command-line options organized into several cate
 
 #### Global Options
 
+- `--composer`: Choose image composer: `ffmpeg` (default) or `imagesharp`
 - `--verbose, -v`: Enable verbose logging
 - `--version`: Show version information
 - `--filters`: List all available image filters
@@ -192,7 +201,10 @@ The application supports configuration through:
   - ✅ **Bug Fix (Oct 2025)**: Resolved `-c` alias conflict (now only `--columns` uses `-c`)
 - **Configuration System**: JSON config support with environment variables and CLI overrides
 - **Video Processing**: ✅ **Migrated to FFmpeg.AutoGen** for direct libavcodec control and frame-level seeking
-- **Image Composition**: Full contact sheet creation with headers, timestamps, and watermarks
+- **Image Composition**: Dual composer implementations available via `--composer` option
+  - ✅ **FFmpeg.AutoGen Composer** (default, hybrid): Uses FFmpeg filter graphs for per-frame processing (resize, text with freetype, borders, filters), ImageSharp for grid layout
+  - ✅ **ImageSharp Composer** (legacy): Pure ImageSharp implementation
+  - ✅ **Pixel-Perfect Text**: FFmpeg composer uses freetype for exact visual match to original Go mt
   - ✅ **Header Format**: Matches mt's multi-line structure with labels (File Name, File Size, Duration, Resolution)
   - ✅ **Dynamic Header Height**: Automatically adjusts to fit content with or without metadata
   - ✅ **Binary Units**: File sizes display in GiB/MiB (matching mt)
@@ -226,7 +238,7 @@ Performance comparison against the original Go implementation (44 thumbnails / 4
 
 ### ⚠️ Known Limitations
 
-- **Font Rendering**: ImageSharp uses a different font rendering engine than freetype (used by FFmpeg/Go), resulting in slightly different text appearance at the same font size. This is a cosmetic difference that doesn't affect functionality.
+- **Font Rendering** (ImageSharp composer only): When using `--composer imagesharp`, text rendering uses a different engine than freetype (used by FFmpeg/Go), resulting in slightly different text appearance. The default FFmpeg composer provides pixel-perfect text rendering matching the original Go implementation.
 
 ### ⚠️ Prerequisites
 
@@ -235,10 +247,10 @@ Performance comparison against the original Go implementation (44 thumbnails / 4
 ## Dependencies
 
 - **System.CommandLine**: Command-line interface parsing
-- **FFmpeg.AutoGen**: Direct FFmpeg bindings for video processing and frame extraction
-- **SixLabors.ImageSharp**: Image manipulation and processing
-- **SixLabors.ImageSharp.Drawing**: Drawing operations for contact sheets
-- **SixLabors.Fonts**: Text rendering for timestamps and headers
+- **FFmpeg.AutoGen**: Direct FFmpeg bindings for video processing, frame extraction, and image composition (default)
+- **SixLabors.ImageSharp**: Image manipulation and legacy composer implementation
+- **SixLabors.ImageSharp.Drawing**: Drawing operations for legacy composer
+- **SixLabors.Fonts**: Text rendering for legacy composer
 - **Microsoft.Extensions.Configuration**: Configuration management
 - **Serilog**: Structured logging (planned)
 
@@ -303,6 +315,12 @@ This project is licensed under the GNU General Public License v3.0. See the [LIC
    - Migrated from FFMpegCore to FFmpeg.AutoGen for better performance
    - Achieved 4x performance improvement
    - Implemented true fast seeking behavior with direct libavcodec control
+   - ✅ **FFmpeg.AutoGen Composer** - COMPLETED (default as of v2.0, hybrid approach)
+     - Pixel-perfect text rendering with freetype matching original Go implementation
+     - Uses FFmpeg filter graphs (scale, drawtext, drawbox) for per-frame processing
+     - Uses ImageSharp for grid layout composition (simple, maintainable)
+     - Available via `--composer ffmpeg` (default) or legacy `--composer imagesharp`
+     - Best of both worlds: exact rendering + clean code architecture
 
 ### Medium Priority
 
@@ -315,16 +333,18 @@ This project is licensed under the GNU General Public License v3.0. See the [LIC
 
 1. **Unit Testing** - Add comprehensive test coverage
 2. **Documentation** - Expand usage examples and troubleshooting guides
-3. **Code Cleanup** - Remove legacy FFMpegCore references and dependencies
+3. **Code Cleanup** - Remove legacy ImageSharp composer after migration period (keeping as fallback temporarily)
 
 ### Future Considerations
 
-1. **FFmpeg.AutoGen for Image Composition** (Potential Refactor)
-   - Current: Uses SixLabors.ImageSharp for contact sheet creation and text rendering
-   - Consideration: Migrate to FFmpeg's filter graph for composition (scale, drawtext, tile/xstack, overlay)
-   - **Pros**: Pixel-perfect text rendering matching mt (uses freetype), potentially faster, one fewer dependency
-   - **Cons**: Complex filter graph syntax, less flexible than C# code, harder to debug, significant refactoring effort
-   - **Status**: Under consideration - ImageSharp works well, but FFmpeg would provide exact visual parity with mt
+1. ✅ **FFmpeg.AutoGen for Image Composition** - COMPLETED (v2.0 - Hybrid Approach)
+   - Successfully migrated critical operations to FFmpeg's filter graphs
+   - **FFmpeg.AutoGen handles**: Frame resizing, text rendering (freetype), borders, image filters
+   - **ImageSharp handles**: Grid layout, canvas creation, watermarks (simpler in C#)
+   - Achieves pixel-perfect text rendering matching mt (uses freetype)
+   - Available as default composer, with ImageSharp as legacy fallback
+   - Hybrid approach is intentional and optimal - full FFmpeg migration possible but not necessary
+   - Legacy ImageSharp composer will be removed after migration period
 
 ## Acknowledgments
 

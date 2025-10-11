@@ -26,7 +26,8 @@ The `reference/original-mt/` directory contains the complete Go implementation a
 The application uses a stateless service pattern with clear separation of concerns:
 
 - **VideoProcessor** ([Services/VideoProcessor.cs](Services/VideoProcessor.cs)) - FFmpeg integration for metadata extraction and frame capture
-- **ImageComposer** ([Services/ImageComposer.cs](Services/ImageComposer.cs)) - Contact sheet creation, header generation, and timestamp overlays
+- **FFmpegFilterGraphComposer** ([Services/FFmpegFilterGraphComposer.cs](Services/FFmpegFilterGraphComposer.cs)) - FFmpeg.AutoGen-based contact sheet creation with filter graphs (default)
+- **ImageComposer** ([Services/ImageComposer.cs](Services/ImageComposer.cs)) - Legacy ImageSharp-based contact sheet creation (fallback)
 - **FilterService** ([Services/FilterService.cs](Services/FilterService.cs)) - Image processing filters (greyscale, sepia, strip effects, etc.)
 - **ContentDetectionService** ([Services/ContentDetectionService.cs](Services/ContentDetectionService.cs)) - Frame quality analysis (blank/blur/NSFW detection)
 - **OutputService** ([Services/OutputService.cs](Services/OutputService.cs)) - File I/O, WebVTT generation, and filename pattern substitution
@@ -45,6 +46,7 @@ Video Input → Extract Metadata → Calculate Timestamps → Extract Frames
 - **ThumbnailOptions** ([Models/ThumbnailOptions.cs](Models/ThumbnailOptions.cs)) - Single comprehensive options class with 40+ properties
 - **System.CommandLine** - Direct CLI option mapping to ThumbnailOptions properties
 - **Pattern**: Each CLI option maps to a ThumbnailOptions property with default values and aliases
+- **Composer Selection**: `--composer` option chooses between `ffmpeg` (default) and `imagesharp` (legacy)
 
 ## Key Development Patterns
 
@@ -159,9 +161,17 @@ dotnet run -- --help     # Show all options
   - `--fast` option now provides true keyframe-based seeking matching original Go implementation
   - **Performance**: Achieved 4x improvement over FFMpegCore, now within ~40-50% of Go speed
 
-#### ✅ Image Composition (ImageComposer.cs)
+#### ✅ Image Composition
 
-[Services/ImageComposer.cs](Services/ImageComposer.cs) - Complete contact sheet creation:
+**Default: FFmpegFilterGraphComposer.cs** ([Services/FFmpegFilterGraphComposer.cs](Services/FFmpegFilterGraphComposer.cs)) - FFmpeg.AutoGen-based composition:
+
+- ✅ CreateContactSheet() - Create grid layout using FFmpeg filter graphs
+- ✅ Text rendering using FFmpeg's `drawtext` filter with freetype (pixel-perfect match to mt)
+- ✅ Frame processing with `scale`, `drawbox` filters
+- ✅ All image filters implemented via FFmpegFilterService
+- ✅ Timestamps and headers with exact visual parity to original Go mt
+
+**Legacy: ImageComposer.cs** ([Services/ImageComposer.cs](Services/ImageComposer.cs)) - ImageSharp-based composition (available via `--composer imagesharp`):
 
 - ✅ CreateContactSheet() - Create grid layout with configurable columns, padding, borders
 - ✅ CalculateHeaderHeight() - Dynamic header height calculation based on content
@@ -172,7 +182,7 @@ dotnet run -- --help     # Show all options
 - ✅ FormatFileSize() - Binary units (GiB, MiB) matching mt's output
 - ✅ Customizable colors, fonts, and styling
 
-**Note**: Uses SixLabors.ImageSharp for rendering. Font rendering differs slightly from mt's freetype due to different rendering engines.
+**Note**: ImageSharp uses a different rendering engine than freetype, resulting in slightly different text appearance.
 
 #### ✅ Image Filtering (FilterService.cs)
 
@@ -284,16 +294,36 @@ dotnet run -- --help     # Show all options
   - Similar approach to original Go implementation using `screengen` library
   - Reference implementation: `reference/original-mt/` uses gitlab.com/opennota/screengen
 
-### ImageSharp Processing Chain
+### Image Composition Pipeline
 
-All image operations use `SixLabors.ImageSharp` with specific patterns:
+**Default (FFmpeg.AutoGen - Hybrid Approach)**: Uses FFmpeg for frame processing, ImageSharp for final composition:
+
+**Per-Frame Processing (FFmpeg.AutoGen):**
+- Load frames as `Image<Rgba32>` from video
+- Convert ImageSharp → AVFrame for FFmpeg processing
+- Process with FFmpeg filter graphs:
+  - `scale` filter for thumbnail resizing
+  - `drawtext` filter for timestamps (freetype - pixel-perfect)
+  - `drawtext` filter for header text (freetype - pixel-perfect)
+  - `drawbox` filter for borders
+- Apply filters via `FFmpegFilterService` using native FFmpeg filters
+- Convert AVFrame → ImageSharp for composition
+
+**Final Composition (ImageSharp):**
+- Create canvas with background color
+- Arrange processed frames in grid layout
+- Position header image
+- Apply watermarks (if specified)
+
+**Legacy (ImageSharp)**: Available via `--composer imagesharp`:
 
 - Load frames as `Image<Rgba32>`
 - Apply filters via `FilterService.ApplyFilters()`
+- Resize frames using ImageSharp
+- Render timestamps/headers using `SixLabors.Fonts` (differs from freetype)
 - Compose contact sheets with precise pixel calculations in `ImageComposer`
-- Text rendering via `SixLabors.Fonts` (differs slightly from FFmpeg's freetype)
 
-**Known Limitation**: Font rendering uses ImageSharp's engine, which produces slightly different text appearance than freetype (used by FFmpeg/mt) at the same font size. This is cosmetic and doesn't affect functionality.
+**Key Difference**: The FFmpeg composer achieves **pixel-perfect text rendering** matching the original Go mt (via freetype), while ImageSharp produces slightly different text appearance. Both use ImageSharp for grid layout.
 
 ### Content Detection Algorithms
 
@@ -411,27 +441,38 @@ Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`
 7. **Documentation** - Add usage examples, troubleshooting guide
 8. **Code cleanup** - Remove legacy FFMpegCore references and dependencies
 
-### Future Considerations
+### Migration Status
 
-**FFmpeg.AutoGen for Image Composition** (Potential Refactor)
+**✅ FFmpeg.AutoGen for Image Composition** - COMPLETED (v2.0 - Hybrid Approach)
 
-- **Current State**: Uses SixLabors.ImageSharp for contact sheet creation and text rendering
-- **Consideration**: Migrate to FFmpeg's filter graph for composition
-  - Use `scale` filter for resizing thumbnails
-  - Use `drawtext` filter for timestamps/header (uses freetype, matches mt exactly)
-  - Use `tile` or `xstack` filters for grid layout
-  - Use `overlay` filter for watermarks
-- **Pros**:
-  - Pixel-perfect text rendering matching mt (freetype)
-  - Potentially faster (all in native FFmpeg)
-  - One fewer dependency (remove ImageSharp)
-  - Exact visual parity with original mt
-- **Cons**:
-  - Complex filter graph syntax
-  - Less flexible than C# code
-  - Harder to debug
-  - Significant refactoring effort
-- **Status**: Under consideration - ImageSharp works well for current needs
+- **Status**: Fully implemented and set as default composer
+- **Implementation**: Hybrid approach combining FFmpeg.AutoGen and ImageSharp
+
+  **FFmpeg.AutoGen handles:**
+  - `scale` filter for resizing thumbnails
+  - `drawtext` filter for timestamps (uses freetype, matches mt exactly)
+  - `drawtext` filter for header text (uses freetype, matches mt exactly)
+  - `drawbox` filter for borders
+  - Native FFmpeg filters for image effects (greyscale, sepia, etc.)
+  - ImageSharp ↔ AVFrame conversions
+
+  **ImageSharp handles:**
+  - Grid layout composition (arranging thumbnails)
+  - Canvas creation (background)
+  - Image positioning (final assembly)
+  - Watermarks
+
+- **Benefits Achieved**:
+  - ✅ Pixel-perfect text rendering matching mt (freetype)
+  - ✅ Exact visual parity with original mt for text
+  - ✅ Simple, maintainable grid layout code in C#
+  - ✅ Best of both worlds: native rendering + clean architecture
+
+- **Why Hybrid**: Grid layout is simpler in C# than FFmpeg's `xstack`/`tile` filters. The critical goal (pixel-perfect text) is achieved while keeping code maintainable.
+
+- **Access**: Use `--composer ffmpeg` (default) or `--composer imagesharp` (legacy)
+- **Future**: Full FFmpeg migration possible but not necessary - current approach is optimal
+- **Migration Period**: ImageSharp composer kept as fallback, will be removed after testing period
 
 ## Key Reference Files
 
