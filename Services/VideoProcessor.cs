@@ -1,4 +1,4 @@
-using FFMpegCore;
+using FFmpeg.AutoGen.Abstractions;
 using nathanbutlerDEV.mt.net.Models;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -7,30 +7,114 @@ namespace nathanbutlerDEV.mt.net.Services;
 
 public class VideoProcessor
 {
-    public async Task<HeaderInfo> GetVideoMetadataAsync(string videoPath)
+    /// <summary>
+    /// Extracts metadata from the specified video file using FFmpeg.AutoGen.
+    /// </summary>
+    /// <param name="videoPath">The path to the video file.</param>
+    /// <returns>A HeaderInfo object containing the extracted metadata.</returns>
+    public static unsafe Task<HeaderInfo> GetVideoMetadataAsync(string videoPath)
     {
-        var mediaInfo = await FFProbe.AnalyseAsync(videoPath);
-
-        var videoStream = mediaInfo.PrimaryVideoStream;
-        var audioStream = mediaInfo.PrimaryAudioStream;
-
-        return new HeaderInfo
+        return Task.Run(() =>
         {
-            Filename = Path.GetFileName(videoPath),
-            FilePath = videoPath,
-            FileSize = new FileInfo(videoPath).Length,
-            Duration = mediaInfo.Duration,
-            Width = videoStream?.Width ?? 0,
-            Height = videoStream?.Height ?? 0,
-            VideoCodec = videoStream?.CodecName ?? "unknown",
-            AudioCodec = audioStream?.CodecName ?? "unknown",
-            FrameRate = videoStream?.FrameRate ?? 0,
-            BitRate = (long)mediaInfo.Format.BitRate,
-            Format = mediaInfo.Format.FormatName ?? "unknown"
-        };
+            AVFormatContext* pFormatContext = ffmpeg.avformat_alloc_context();
+
+            try
+            {
+                // Open input file
+                ffmpeg.avformat_open_input(&pFormatContext, videoPath, null, null).ThrowExceptionIfError();
+                ffmpeg.avformat_find_stream_info(pFormatContext, null).ThrowExceptionIfError();
+
+                // Find video stream
+                AVCodec* videoCodec = null;
+                var videoStreamIndex = ffmpeg
+                    .av_find_best_stream(pFormatContext, AVMediaType.AVMEDIA_TYPE_VIDEO, -1, -1, &videoCodec, 0)
+                    .ThrowExceptionIfError();
+
+                var videoStream = pFormatContext->streams[videoStreamIndex];
+
+                // Find audio stream (may not exist)
+                AVCodec* audioCodec = null;
+                var audioStreamIndex = ffmpeg
+                    .av_find_best_stream(pFormatContext, AVMediaType.AVMEDIA_TYPE_AUDIO, -1, -1, &audioCodec, 0);
+
+                // Extract video codec name
+                var videoCodecName = videoCodec != null
+                    ? System.Runtime.InteropServices.Marshal.PtrToStringAnsi((IntPtr)videoCodec->name) ?? "unknown"
+                    : "unknown";
+
+                // Extract audio codec name
+                var audioCodecName = "unknown";
+                if (audioStreamIndex >= 0 && audioCodec != null)
+                {
+                    audioCodecName = System.Runtime.InteropServices.Marshal.PtrToStringAnsi((IntPtr)audioCodec->name) ?? "unknown";
+                }
+
+                // Extract format name
+                var formatName = pFormatContext->iformat != null
+                    ? System.Runtime.InteropServices.Marshal.PtrToStringAnsi((IntPtr)pFormatContext->iformat->name) ?? "unknown"
+                    : "unknown";
+
+                // Calculate duration
+                TimeSpan duration;
+                if (videoStream->duration != ffmpeg.AV_NOPTS_VALUE)
+                {
+                    duration = TimeSpan.FromSeconds(videoStream->duration * ffmpeg.av_q2d(videoStream->time_base));
+                }
+                else if (pFormatContext->duration != ffmpeg.AV_NOPTS_VALUE)
+                {
+                    duration = TimeSpan.FromSeconds(pFormatContext->duration / (double)ffmpeg.AV_TIME_BASE);
+                }
+                else
+                {
+                    duration = TimeSpan.Zero;
+                }
+
+                // Calculate frame rate
+                double frameRate;
+                var avgFrameRate = videoStream->avg_frame_rate;
+                if (avgFrameRate.num != 0 && avgFrameRate.den != 0)
+                {
+                    frameRate = ffmpeg.av_q2d(avgFrameRate);
+                }
+                else
+                {
+                    frameRate = 0;
+                }
+
+                // Get dimensions
+                var width = videoStream->codecpar->width;
+                var height = videoStream->codecpar->height;
+
+                // Get bitrate
+                var bitRate = pFormatContext->bit_rate;
+
+                return new HeaderInfo
+                {
+                    Filename = Path.GetFileName(videoPath),
+                    FilePath = videoPath,
+                    FileSize = new FileInfo(videoPath).Length,
+                    Duration = duration,
+                    Width = width,
+                    Height = height,
+                    VideoCodec = videoCodecName,
+                    AudioCodec = audioCodecName,
+                    FrameRate = frameRate,
+                    BitRate = bitRate,
+                    Format = formatName
+                };
+            }
+            finally
+            {
+                // Clean up
+                if (pFormatContext != null)
+                {
+                    ffmpeg.avformat_close_input(&pFormatContext);
+                }
+            }
+        });
     }
 
-    public List<TimeSpan> CalculateTimestamps(
+    public static List<TimeSpan> CalculateTimestamps(
         TimeSpan duration,
         ThumbnailOptions options)
     {
@@ -94,7 +178,7 @@ public class VideoProcessor
         return timestamps;
     }
 
-    public async Task<List<(Image<Rgba32> Image, TimeSpan Timestamp)>> ExtractFramesAsync(
+    public static async Task<List<(Image<Rgba32> Image, TimeSpan Timestamp)>> ExtractFramesAsync(
         string videoPath,
         List<TimeSpan> timestamps,
         ThumbnailOptions options)
@@ -117,7 +201,7 @@ public class VideoProcessor
         return frames;
     }
 
-    private async Task<Image<Rgba32>?> ExtractFrameAtTimestampAsync(
+    private static async Task<Image<Rgba32>?> ExtractFrameAtTimestampAsync(
         string videoPath,
         TimeSpan timestamp,
         ThumbnailOptions options)
@@ -136,7 +220,7 @@ public class VideoProcessor
         }
     }
 
-    public async Task<Image<Rgba32>?> ExtractFrameWithRetriesAsync(
+    public static async Task<Image<Rgba32>?> ExtractFrameWithRetriesAsync(
         string videoPath,
         TimeSpan timestamp,
         ThumbnailOptions options,

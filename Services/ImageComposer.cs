@@ -36,8 +36,13 @@ public class ImageComposer
         var contentWidth = (columns * thumbnailWidth) + ((columns + 1) * padding);
         var contentHeight = (rows * thumbnailHeight) + ((rows + 1) * padding);
 
-        // Header dimensions
-        var headerHeight = options.Header ? 100 : 0;
+        // Calculate header height dynamically based on content
+        var headerHeight = 0;
+        if (options.Header)
+        {
+            headerHeight = CalculateHeaderHeight(headerInfo, options, contentWidth);
+        }
+
         var totalHeight = headerHeight + contentHeight;
 
         // Create canvas
@@ -89,6 +94,64 @@ public class ImageComposer
         return canvas;
     }
 
+    private static int CalculateHeaderHeight(HeaderInfo headerInfo, ThumbnailOptions options, int width)
+    {
+        try
+        {
+            var headerText = BuildHeaderText(headerInfo, options);
+            var font = SystemFonts.CreateFont("Arial", options.FontSize);
+            var textOptions = new RichTextOptions(font)
+            {
+                Origin = new PointF(10, 10),
+                WrappingLength = width - 20,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top
+            };
+
+            var textSize = TextMeasurer.MeasureSize(headerText, textOptions);
+            // Add padding: 10px top + 10px bottom + measured height
+            return (int)Math.Ceiling(textSize.Height) + 20;
+        }
+        catch
+        {
+            // Fallback to fixed height if font not available
+            return options.HeaderMeta ? 150 : 100;
+        }
+    }
+
+    private static string BuildHeaderText(HeaderInfo headerInfo, ThumbnailOptions options)
+    {
+        var filename = headerInfo.Filename;
+        var dimensions = $"{headerInfo.Width}x{headerInfo.Height}";
+        var durationStr = FormatDurationForHeader(headerInfo.Duration);
+        var fileSize = FormatFileSize(headerInfo.FileSize);
+
+        var headerText = $"File Name: {filename}\n" +
+                        $"File Size: {fileSize}\n" +
+                        $"Duration: {durationStr}\n" +
+                        $"Resolution: {dimensions}";
+
+        // Add metadata if requested
+        if (options.HeaderMeta)
+        {
+            var fps = $"{headerInfo.FrameRate:F2}";
+            var bitrate = $"{headerInfo.BitRate / 1000} kbps";
+            var vcodec = headerInfo.VideoCodec;
+            var acodec = headerInfo.AudioCodec;
+
+            headerText += $"\nFPS: {fps}, Bitrate: {bitrate}\n" +
+                          $"Codec: {vcodec} / {acodec}";
+        }
+
+        // Add comment if provided
+        if (!string.IsNullOrEmpty(options.Comment))
+        {
+            headerText += $"\n{options.Comment}";
+        }
+
+        return headerText;
+    }
+
     private void DrawHeader(
         Image<Rgba32> canvas,
         HeaderInfo headerInfo,
@@ -102,28 +165,8 @@ public class ImageComposer
         // Fill header background
         canvas.Mutate(ctx => ctx.Fill(bgHeader, new RectangleF(0, 0, width, height)));
 
-        // Prepare header text
-        var filename = headerInfo.Filename;
-        var dimensions = $"{headerInfo.Width}x{headerInfo.Height}";
-        var durationStr = FormatDuration(headerInfo.Duration);
-        var fileSize = FormatFileSize(headerInfo.FileSize);
-
-        var headerText = $"{filename}\n{dimensions} | {durationStr} | {fileSize}";
-
-        // Add metadata if requested
-        if (options.HeaderMeta)
-        {
-            var codec = headerInfo.VideoCodec;
-            var fps = $"{headerInfo.FrameRate:F2} fps";
-            var bitrate = $"{(headerInfo.BitRate / 1000)} kbps";
-            headerText += $"\n{codec} | {fps} | {bitrate}";
-        }
-
-        // Add comment if provided
-        if (!string.IsNullOrEmpty(options.Comment))
-        {
-            headerText += $"\n{options.Comment}";
-        }
+        // Build header text
+        var headerText = BuildHeaderText(headerInfo, options);
 
         // Draw text
         try
@@ -146,7 +189,7 @@ public class ImageComposer
         }
     }
 
-    private void AddTimestamp(
+    private static void AddTimestamp(
         Image<Rgba32> image,
         TimeSpan timestamp,
         ThumbnailOptions options)
@@ -189,7 +232,7 @@ public class ImageComposer
         }
     }
 
-    public void ApplyWatermark(
+    public static void ApplyWatermark(
         Image<Rgba32> image,
         string watermarkPath,
         bool center = true)
@@ -217,32 +260,39 @@ public class ImageComposer
         }
     }
 
-    private string FormatDuration(TimeSpan duration)
+    private static string FormatDuration(TimeSpan duration)
     {
         return duration.Hours > 0
             ? $"{duration.Hours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}"
             : $"{duration.Minutes:D2}:{duration.Seconds:D2}";
     }
 
-    private string FormatTimestamp(TimeSpan timestamp)
+    private static string FormatDurationForHeader(TimeSpan duration)
     {
-        return timestamp.Hours > 0
-            ? $"{timestamp.Hours:D2}:{timestamp.Minutes:D2}:{timestamp.Seconds:D2}"
-            : $"{timestamp.Minutes:D2}:{timestamp.Seconds:D2}";
+        // Always use HH:MM:SS format for header to match mt
+        return $"{(int)duration.TotalHours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}";
     }
 
-    private string FormatFileSize(long bytes)
+    private static string FormatTimestamp(TimeSpan timestamp)
     {
-        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        // Always show hours to match mt's format (HH:MM:SS)
+        return $"{(int)timestamp.TotalHours:D2}:{timestamp.Minutes:D2}:{timestamp.Seconds:D2}";
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        // Use binary units (KiB, MiB, GiB) to match mt's output
+        string[] sizes = { "B", "KiB", "MiB", "GiB", "TiB" };
         double len = bytes;
         int order = 0;
 
         while (len >= 1024 && order < sizes.Length - 1)
         {
             order++;
-            len = len / 1024;
+            len /= 1024;
         }
 
-        return $"{len:0.##} {sizes[order]}";
+        // Format with one decimal place for values >= 1 GiB to match mt's output
+        return order >= 3 ? $"{len:0.0} {sizes[order]}" : $"{len:0.##} {sizes[order]}";
     }
 }

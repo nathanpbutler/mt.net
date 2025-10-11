@@ -118,7 +118,7 @@ The tool provides comprehensive command-line options organized into several cate
 - `--border`: Border width around thumbnails (default: 0)
 - `--watermark`: Watermark image for center thumbnail
 - `--watermark-all`: Watermark image for all thumbnails
-- `--comment`: Comment to add to header (default: "contactsheet created with mt.net")
+- `--comment`: Comment to add to header (default: "contactsheet created with mt.net ([https://github.com/nathanpbutler/mt.net](https://github.com/nathanpbutler/mt.net))")
 
 #### Processing Options
 

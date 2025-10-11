@@ -1,6 +1,5 @@
 using System.CommandLine;
 using nathanbutlerDEV.mt.net.Models;
-using nathanbutlerDEV.mt.net.Utilities;
 using nathanbutlerDEV.mt.net.Services;
 
 namespace nathanbutlerDEV.mt.net.Commands;
@@ -271,7 +270,7 @@ public static class RootCommandBuilder
         var commentOption = new Option<string>("--comment")
         {
             Description = "Comment to add to header",
-            DefaultValueFactory = _ => "contactsheet created with mt.net"
+            DefaultValueFactory = _ => "contactsheet created with mt.net (https://github.com/nathanpbutler/mt.net)"
         };
 
         // Configuration options
@@ -495,11 +494,11 @@ public static class RootCommandBuilder
 
         // Step 1: Extract video metadata
         Console.WriteLine("Extracting video metadata...");
-        var headerInfo = await videoProcessor.GetVideoMetadataAsync(videoPath);
+        var headerInfo = await VideoProcessor.GetVideoMetadataAsync(videoPath);
 
         // Step 2: Calculate timestamps
         Console.WriteLine("Calculating timestamps...");
-        var timestamps = videoProcessor.CalculateTimestamps(headerInfo.Duration, options);
+        var timestamps = VideoProcessor.CalculateTimestamps(headerInfo.Duration, options);
         Console.WriteLine($"Will extract {timestamps.Count} frames");
 
         // Step 3: Extract frames with content detection
@@ -511,7 +510,7 @@ public static class RootCommandBuilder
             var timestamp = timestamps[i];
             Console.Write($"\rExtracting frame {i + 1}/{timestamps.Count} at {timestamp:hh\\:mm\\:ss}...");
 
-            var frame = await videoProcessor.ExtractFrameWithRetriesAsync(
+            var frame = await VideoProcessor.ExtractFrameWithRetriesAsync(
                 videoPath,
                 timestamp,
                 options,
@@ -566,14 +565,14 @@ public static class RootCommandBuilder
             // Apply watermarks if specified
             if (!string.IsNullOrEmpty(options.Watermark))
             {
-                imageComposer.ApplyWatermark(contactSheet, options.Watermark, center: true);
+                ImageComposer.ApplyWatermark(contactSheet, options.Watermark, center: true);
             }
 
             if (!string.IsNullOrEmpty(options.WatermarkAll))
             {
                 foreach (var (frame, _) in frames)
                 {
-                    imageComposer.ApplyWatermark(frame, options.WatermarkAll, center: false);
+                    ImageComposer.ApplyWatermark(frame, options.WatermarkAll, center: false);
                 }
             }
 

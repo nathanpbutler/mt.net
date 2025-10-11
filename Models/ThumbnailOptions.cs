@@ -27,7 +27,7 @@ public class ThumbnailOptions
     public bool HeaderMeta { get; set; } = false;
     public string Watermark { get; set; } = "";
     public string WatermarkAll { get; set; } = "";
-    public string Comment { get; set; } = "contactsheet created with mt.net";
+    public string Comment { get; set; } = "contactsheet created with mt.net (https://github.com/nathanpbutler/mt.net)";
     public string Filter { get; set; } = "none";
     public bool SkipBlank { get; set; } = false;
     public bool SkipBlurry { get; set; } = false;

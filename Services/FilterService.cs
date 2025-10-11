@@ -7,7 +7,7 @@ namespace nathanbutlerDEV.mt.net.Services;
 
 public class FilterService
 {
-    private static readonly Random Random = new Random();
+    private static readonly Random Random = new();
 
     public void ApplyFilters(Image<Rgba32> image, string filterString)
     {
@@ -59,29 +59,29 @@ public class FilterService
         }
     }
 
-    private void ApplyGreyscale(Image<Rgba32> image)
+    private static void ApplyGreyscale(Image<Rgba32> image)
     {
         image.Mutate(ctx => ctx.Grayscale());
     }
 
-    private void ApplySepia(Image<Rgba32> image)
+    private static void ApplySepia(Image<Rgba32> image)
     {
         image.Mutate(ctx => ctx.Sepia());
     }
 
-    private void ApplyInvert(Image<Rgba32> image)
+    private static void ApplyInvert(Image<Rgba32> image)
     {
         image.Mutate(ctx => ctx.Invert());
     }
 
-    private void ApplyFancy(Image<Rgba32> image)
+    private static void ApplyFancy(Image<Rgba32> image)
     {
         // Randomly rotate the image
         var rotationAngle = Random.Next(-15, 16); // Random angle between -15 and 15 degrees
         image.Mutate(ctx => ctx.Rotate(rotationAngle));
     }
 
-    private void ApplyCrossProcessing(Image<Rgba32> image)
+    private static void ApplyCrossProcessing(Image<Rgba32> image)
     {
         // Cross processing effect - shift colors and adjust curves
         image.Mutate(ctx =>
@@ -92,7 +92,7 @@ public class FilterService
         });
     }
 
-    private void ApplyStrip(Image<Rgba32> image)
+    private static void ApplyStrip(Image<Rgba32> image)
     {
         // Film strip effect - add sprocket holes on sides
         var sprocketWidth = image.Width / 20;
@@ -113,18 +113,18 @@ public class FilterService
             {
                 // Left sprocket holes
                 ctx.FillPolygon(Color.White, new PointF[] {
-                    new PointF(holeX, y - holeRadius),
-                    new PointF(holeX + holeRadius, y),
-                    new PointF(holeX, y + holeRadius),
-                    new PointF(holeX - holeRadius, y)
+                    new(holeX, y - holeRadius),
+                    new(holeX + holeRadius, y),
+                    new(holeX, y + holeRadius),
+                    new(holeX - holeRadius, y)
                 });
 
                 // Right sprocket holes
                 ctx.FillPolygon(Color.White, new PointF[] {
-                    new PointF(image.Width - holeX, y - holeRadius),
-                    new PointF(image.Width - holeX + holeRadius, y),
-                    new PointF(image.Width - holeX, y + holeRadius),
-                    new PointF(image.Width - holeX - holeRadius, y)
+                    new(image.Width - holeX, y - holeRadius),
+                    new(image.Width - holeX + holeRadius, y),
+                    new(image.Width - holeX, y + holeRadius),
+                    new(image.Width - holeX - holeRadius, y)
                 });
             }
         });
