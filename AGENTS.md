@@ -4,30 +4,109 @@ This file provides guidance to AI coding agents when working with code in this r
 
 ## Project Overview
 
-This is a .NET port of the Go-based media thumbnailing tool `mt` (media thumbnailer). The original Go implementation is available as a git submodule in `reference/original-mt/` for reference during development.
+**mt.net** is a .NET port of a Go-based media thumbnailing tool that generates contact sheets from video files using FFmpeg. The tool extracts frames at calculated timestamps, applies image processing filters, and creates customizable grid layouts with metadata headers.
 
-The original tool generates thumbnail contact sheets from video files using FFmpeg, with features like:
+### Core Features
 
 - Configurable screenshot count, layout, and styling
 - Header with file metadata
-- Timestamps on thumbnails  
-- Various filters and image processing options
+- Timestamps on thumbnails
+- Various filters and image processing options (greyscale, sepia, strip effects, etc.)
 - Upload functionality
 - WebVTT generation for HTML5 video players
 
+### Reference Implementation
+
+The `reference/original-mt/` directory contains the complete Go implementation as a git submodule. When making changes that affect output compatibility, reference the Go implementation's behavior for consistency.
+
+## Architecture & Core Components
+
+### Service-Oriented Architecture
+
+The application uses a stateless service pattern with clear separation of concerns:
+
+- **VideoProcessor** ([Services/VideoProcessor.cs](Services/VideoProcessor.cs)) - FFmpeg integration for metadata extraction and frame capture
+- **ImageComposer** ([Services/ImageComposer.cs](Services/ImageComposer.cs)) - Contact sheet creation, header generation, and timestamp overlays
+- **FilterService** ([Services/FilterService.cs](Services/FilterService.cs)) - Image processing filters (greyscale, sepia, strip effects, etc.)
+- **ContentDetectionService** ([Services/ContentDetectionService.cs](Services/ContentDetectionService.cs)) - Frame quality analysis (blank/blur/NSFW detection)
+- **OutputService** ([Services/OutputService.cs](Services/OutputService.cs)) - File I/O, WebVTT generation, and filename pattern substitution
+
+### Processing Pipeline Flow
+
+```csharp
+// Main pipeline in Commands/RootCommand.cs ProcessVideoAsync()
+Video Input → Extract Metadata → Calculate Timestamps → Extract Frames
+→ Apply Content Detection → Apply Filters → Create Contact Sheet
+→ Apply Watermarks → Save Output → Generate WebVTT
+```
+
+### Configuration System
+
+- **ThumbnailOptions** ([Models/ThumbnailOptions.cs](Models/ThumbnailOptions.cs)) - Single comprehensive options class with 40+ properties
+- **System.CommandLine** - Direct CLI option mapping to ThumbnailOptions properties
+- **Pattern**: Each CLI option maps to a ThumbnailOptions property with default values and aliases
+
+## Key Development Patterns
+
+### Temp Directory Workflow
+
+The `temp/` directory serves as temporary storage for current development work:
+
+- **Check temp/ first** - Before sourcing external documentation or code, check if it's already available in temp/
+- **Ask before sourcing** - If needed code/docs aren't in temp/, ask the user to source them before proceeding
+- **Current focus**: FFmpeg.AutoGen migration work is in `temp/FFmpeg.AutoGen/`
+
+### Service Instantiation Pattern
+
+Services are instantiated per-operation (not injected) in the main processing method:
+
+```csharp
+var videoProcessor = new VideoProcessor();
+var contentDetection = new ContentDetectionService();
+var filterService = new FilterService();
+// Use directly without DI container
+```
+
+### Async Resource Management
+
+Critical pattern for image processing - always dispose images to prevent memory leaks:
+
+```csharp
+foreach (var (frame, _) in frames)
+{
+    frame.Dispose(); // Essential for ImageSharp images
+}
+```
+
+### CLI Option Declaration Pattern
+
+Options follow a consistent pattern in [Commands/RootCommand.cs](Commands/RootCommand.cs):
+
+```csharp
+var numCapsOption = new Option<int>("--numcaps")
+{
+    Description = "Number of captures to make",
+    DefaultValueFactory = _ => 4
+};
+numCapsOption.Aliases.Add("-n");
+```
+
+### Filename Pattern Substitution
+
+Output paths use Go-template style patterns (`{{.Path}}{{.Name}}.jpg`) processed in `OutputService.BuildOutputPath()`.
+
 ## Development Commands
 
-### Build and Run
-
 ```bash
-# Build the project
+# Build and run (standard .NET commands)
 dotnet build
-
-# Run the application
 dotnet run
 
 # Build for release
 dotnet build --configuration Release
+
+# Build optimized single-file executable
+dotnet publish -c Release -r osx-arm64 --self-contained
 
 # Run with arguments (examples)
 dotnet run -- video.mp4 --numcaps 9 --columns 3 --width 300
@@ -69,7 +148,7 @@ dotnet run -- --help     # Show all options
 
 #### ⚠️ Video Processing (VideoProcessor.cs)
 
-`Services/VideoProcessor.cs` - Fully implemented video processing logic:
+[Services/VideoProcessor.cs](Services/VideoProcessor.cs) - Fully implemented video processing logic:
 
 - ✅ GetVideoMetadataAsync() - Extract metadata using FFMpegCore
 - ✅ CalculateTimestamps() - Calculate timestamps based on numCaps, interval, from, to, skipCredits
@@ -78,11 +157,11 @@ dotnet run -- --help     # Show all options
 - ⚠️ **Fast seeking support** - Partially implemented using `-noaccurate_seek` flag
   - Current implementation uses FFMpegCore which has limited control over frame-level seeking behavior
   - `--fast` option adds `-noaccurate_seek` flag but doesn't provide same performance as original Go implementation
-  - **Recommendation**: Migrate to FFmpeg.AutoGen for direct libavcodec control (see "Future Enhancements" below)
+  - **Migration in progress**: FFmpeg.AutoGen for direct libavcodec control (see "FFmpeg Integration" below)
 
 #### ✅ Image Composition (ImageComposer.cs)
 
-`Services/ImageComposer.cs` - Complete contact sheet creation:
+[Services/ImageComposer.cs](Services/ImageComposer.cs) - Complete contact sheet creation:
 
 - ✅ CreateContactSheet() - Create grid layout with configurable columns, padding, borders
 - ✅ DrawHeader() - Generate header with file metadata (filename, dimensions, duration, codec, fps, bitrate)
@@ -92,7 +171,7 @@ dotnet run -- --help     # Show all options
 
 #### ✅ Image Filtering (FilterService.cs)
 
-`Services/FilterService.cs` - All filter implementations:
+[Services/FilterService.cs](Services/FilterService.cs) - All filter implementations:
 
 - ✅ ApplyFilters() - Filter chaining support
 - ✅ Greyscale, Sepia, Invert filters
@@ -102,7 +181,7 @@ dotnet run -- --help     # Show all options
 
 #### ✅ Content Detection (ContentDetectionService.cs)
 
-`Services/ContentDetectionService.cs` - Frame quality analysis:
+[Services/ContentDetectionService.cs](Services/ContentDetectionService.cs) - Frame quality analysis:
 
 - ✅ IsBlankFrame() - Histogram analysis with configurable threshold
 - ✅ IsBlurryFrame() - Laplacian variance for blur detection
@@ -111,7 +190,7 @@ dotnet run -- --help     # Show all options
 
 #### ✅ Output Management (OutputService.cs)
 
-`Services/OutputService.cs` - File handling and export:
+[Services/OutputService.cs](Services/OutputService.cs) - File handling and export:
 
 - ✅ SaveContactSheetAsync() - Save contact sheets in JPEG/PNG formats
 - ✅ SaveIndividualImagesAsync() - Save individual thumbnail images
@@ -121,19 +200,18 @@ dotnet run -- --help     # Show all options
 
 #### ❌ Upload Service (UploadService.cs) **Priority: LOW**
 
-```csharp
-// Services/UploadService.cs - HTTP upload functionality (NOT YET IMPLEMENTED)
+[Services/UploadService.cs](Services/UploadService.cs) - HTTP upload functionality (NOT YET IMPLEMENTED):
+
 - UploadFile(filePath, uploadUrl, options)
 - CreateMultipartFormData(file, metadata)
 - HandleUploadProgress(callback)
 - RetryUpload(file, maxRetries)
-```
 
 ### ✅ Integration Complete
 
 #### ✅ Main Processing Pipeline
 
-`Commands/RootCommand.cs` - Fully integrated async processing pipeline:
+[Commands/RootCommand.cs](Commands/RootCommand.cs) - Fully integrated async processing pipeline:
 
 1. ✅ Validate input file
 2. ✅ Extract video metadata using VideoProcessor
@@ -184,6 +262,109 @@ dotnet run -- --help     # Show all options
 4. ⚠️ **Fast seeking optimization** - Implemented with `-noaccurate_seek` but not as performant as original
 5. ⏳ **Performance optimizations** - To be evaluated after testing
 
+## Critical Dependencies & Integration Points
+
+### FFmpeg Integration (⚠️ Migration in Progress)
+
+- **Current**: Uses `FFMpegCore` for high-level video processing in main codebase
+- **Migration Target**: `FFmpeg.AutoGen` cloned in `temp/FFmpeg.AutoGen/` for direct libavcodec control
+- **Temp Directory**: Contains working code/docs for current development - check here first before sourcing externally
+- **Why**: Better performance for frame-level seeking operations
+  - Original uses `screengen` library with `gen.Fast` flag that controls frame-level seeking:
+    - `Fast = true`: Accept first decoded frame (keyframe-based, very fast)
+    - `Fast = false`: Continue decoding until exact timestamp (frame-accurate, slower)
+  - FFMpegCore's high-level API doesn't expose this level of control
+  - FFmpeg.AutoGen provides P/Invoke bindings to native FFmpeg libraries with full control
+  - Reference implementation: `reference/original-mt/` uses gitlab.com/opennota/screengen (similar to FFmpeg.AutoGen approach)
+
+### ImageSharp Processing Chain
+
+All image operations use `SixLabors.ImageSharp` with specific patterns:
+
+- Load frames as `Image<Rgba32>`
+- Apply filters via `FilterService.ApplyFilters()`
+- Compose contact sheets with precise pixel calculations in `ImageComposer`
+
+### Content Detection Algorithms
+
+Frame quality analysis uses specific thresholds:
+
+- **Blank detection**: Histogram analysis with configurable threshold (default: 85)
+- **Blur detection**: Laplacian variance (default: 62)
+- **Retry logic**: Up to 3 attempts to find suitable frames
+
+## Testing Strategy & Edge Cases
+
+### Required Dependencies
+
+- **FFmpeg must be installed** and accessible in PATH
+- **Font files** for timestamp rendering (DroidSans.ttf referenced)
+
+### Critical Test Scenarios
+
+1. **Various video formats** (MP4, AVI, MKV) - FFmpeg compatibility
+2. **Edge timing** - Very short videos, frame extraction at boundaries
+3. **Content detection** - Blank frames, blurry content, retry logic
+4. **Memory management** - Large videos, multiple frame processing
+
+### Known Performance Considerations
+
+- **Fast seeking** (`--fast` option) uses `-noaccurate_seek` but performance doesn't match original Go implementation
+- **Large contact sheets** with many thumbnails can consume significant memory
+- **Filter chaining** applies sequentially - order matters for some filters
+
+### Testing Requirements
+
+- ✅ Project builds successfully (clean build, no warnings)
+- ✅ FFmpeg installed and accessible in PATH
+- ✅ Column layout fix verified (4 columns working correctly)
+- ⚠️ Fast seeking implemented but performance not matching original (see FFmpeg.AutoGen migration note)
+- ⏳ Test various video formats (MP4, AVI, MKV, etc.) - needs more coverage
+- ⏳ Test edge cases (short videos, long videos, corrupted files) - needs testing
+
+## Project-Specific Conventions
+
+### Error Handling Pattern
+
+```csharp
+try
+{
+    await ProcessVideoAsync(file.FullName, options);
+    return 0;
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"Error processing video: {ex.Message}");
+    if (options.Verbose)
+    {
+        Console.Error.WriteLine(ex.StackTrace);
+    }
+    return 1;
+}
+```
+
+### Filter Implementation Pattern
+
+All filters in `FilterService` implement consistent interfaces and support chaining via comma-separated strings.
+
+### Color Parsing Convention
+
+Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`.
+
+## External Resource Guidelines
+
+### When to Ask Before Sourcing
+
+- **Documentation/code not in temp/**: Ask user to source it first before looking externally
+- **FFmpeg.AutoGen examples**: Check `temp/FFmpeg.AutoGen/` before searching online
+- **API references**: Use temp/ directory content as primary source for current development
+
+### When to Proceed Independently
+
+- **Standard .NET patterns**: Use established .NET conventions for common tasks
+- **ImageSharp operations**: Standard SixLabors.ImageSharp documentation is acceptable
+- **General C# best practices**: No need to ask for standard language features
+
 ## Next Steps
 
 ### Immediate Testing Needed
@@ -195,16 +376,7 @@ dotnet run -- --help     # Show all options
 
 ### Future Enhancements (Post-Testing)
 
-1. **FFmpeg.AutoGen Migration** ⚠️ *HIGH PRIORITY for performance*
-   - Migrate from FFMpegCore to FFmpeg.AutoGen for direct libavcodec/libavformat control
-   - This will enable true fast seeking behavior matching the original Go implementation
-   - Original uses `screengen` library with `gen.Fast` flag that controls frame-level seeking:
-     - `Fast = true`: Accept first decoded frame (keyframe-based, very fast)
-     - `Fast = false`: Continue decoding until exact timestamp (frame-accurate, slower)
-   - FFMpegCore's high-level API doesn't expose this level of control
-   - FFmpeg.AutoGen provides P/Invoke bindings to native FFmpeg libraries with full control
-   - Reference implementation: `reference/original-mt/` uses gitlab.com/opennota/screengen (similar to FFmpeg.AutoGen approach)
-
+1. **FFmpeg.AutoGen Migration** ⚠️ *HIGH PRIORITY for performance* - Work in progress in `temp/FFmpeg.AutoGen/`
 2. **UploadService.cs** - Implement HTTP upload functionality
 3. **Configuration persistence** - Implement --save-config, --config-file, --show-config
 4. **Enhanced logging** - Integrate Serilog with configurable verbosity levels
@@ -214,55 +386,14 @@ dotnet run -- --help     # Show all options
 
 ## Key Reference Files
 
-- `reference/original-mt/mt.go` - Complete Go implementation (lines 82-865)
-- `Models/ThumbnailOptions.cs` - All configuration options
-- `Commands/RootCommand.cs` - CLI interface and main entry point
+- [reference/original-mt/mt.go](reference/original-mt/mt.go) - Complete Go implementation (lines 82-865)
+- [Models/ThumbnailOptions.cs](Models/ThumbnailOptions.cs) - All configuration options
+- [Commands/RootCommand.cs](Commands/RootCommand.cs) - CLI interface and main entry point
 
-## Testing Strategy
-
-- Create test videos of different formats and durations
-- Verify output matches original Go tool behavior
-- Test all filter combinations and edge cases
-- Performance testing with large videos
-
-## Architecture Notes
-
-### Service Layer Design
-
-All services are stateless and can be instantiated on-demand:
-
-- **VideoProcessor** - Handles FFmpeg interactions via FFMpegCore
-- **ImageComposer** - Pure image manipulation using ImageSharp
-- **FilterService** - Applies visual effects to images
-- **ContentDetectionService** - Analyzes image quality metrics
-- **OutputService** - File I/O and path management
-
-### Processing Pipeline Flow
-
-```plaintext
-Input Video → VideoProcessor.GetMetadata()
-           → VideoProcessor.CalculateTimestamps()
-           → VideoProcessor.ExtractFrames() (with ContentDetection)
-           → FilterService.ApplyFilters()
-           → ImageComposer.CreateContactSheet()
-           → ImageComposer.ApplyWatermark()
-           → OutputService.SaveContactSheet()
-           → OutputService.GenerateWebVtt() [optional]
-```
-
-### Key Implementation Details
+## Key Implementation Details
 
 - **Async/Await**: All I/O operations are async for better performance
 - **Resource Management**: Images are properly disposed after processing
 - **Error Handling**: Try-catch blocks with user-friendly error messages
 - **Progress Reporting**: Console output during long-running operations
 - **Retry Logic**: Frame extraction retries up to 3 times for content detection
-
-### Testing Requirements
-
-- ✅ Project builds successfully (clean build, no warnings)
-- ✅ FFmpeg installed and accessible in PATH
-- ✅ Column layout fix verified (4 columns working correctly)
-- ⚠️ Fast seeking implemented but performance not matching original (see FFmpeg.AutoGen migration note)
-- ⏳ Test various video formats (MP4, AVI, MKV, etc.) - needs more coverage
-- ⏳ Test edge cases (short videos, long videos, corrupted files) - needs testing

@@ -5,6 +5,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Namespace: MT.NET -->
     <RootNamespace>nathanbutlerDEV.mt.net</RootNamespace>
     <AssemblyName>mt</AssemblyName>
@@ -15,10 +16,13 @@
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- No debug symbols -->
+    <DebugType>none</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="FFMpegCore" Version="5.2.0" />
+    <PackageReference Include="FFmpeg.AutoGen.Bindings.DynamicallyLoaded" Version="7.1.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.9" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.9" />
     <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine" Version="9.0.9" />
@@ -30,6 +34,13 @@
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-rc.1.25451.107" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude temp directory from build -->
+    <Compile Remove="temp/**" />
+    <EmbeddedResource Remove="temp/**" />
+    <None Remove="temp/**" />
   </ItemGroup>
 
   <Target Name="CreateShortAppHostName" AfterTargets="Build;Publish">

@@ -1,6 +1,4 @@
 using FFMpegCore;
-using FFMpegCore.Enums;
-using FFMpegCore.Pipes;
 using nathanbutlerDEV.mt.net.Models;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -103,12 +101,16 @@ public class VideoProcessor
     {
         var frames = new List<(Image<Rgba32>, TimeSpan)>();
 
-        foreach (var timestamp in timestamps)
+        // Use FFmpeg.AutoGen decoder for better control over seeking
+        using (var decoder = new FFmpegAutoGenVideoDecoder(videoPath))
         {
-            var frame = await ExtractFrameAtTimestampAsync(videoPath, timestamp, options);
-            if (frame != null)
+            foreach (var timestamp in timestamps)
             {
-                frames.Add((frame, timestamp));
+                var frame = await Task.Run(() => decoder.SeekAndExtractFrame(timestamp, options.Fast));
+                if (frame != null)
+                {
+                    frames.Add((frame, timestamp));
+                }
             }
         }
 
@@ -120,41 +122,12 @@ public class VideoProcessor
         TimeSpan timestamp,
         ThumbnailOptions options)
     {
+        // This method is now a simple wrapper around the FFmpeg.AutoGen decoder
+        // It's kept for backward compatibility with the retry logic
         try
         {
-            using var memoryStream = new MemoryStream();
-
-            // Configure FFmpeg arguments for frame extraction
-            // Fast mode: Use -noaccurate_seek for keyframe-based seeking (faster, less accurate)
-            // Accurate mode: Use default accurate seeking (slower, frame-accurate)
-            var success = await FFMpegArguments
-                .FromFileInput(videoPath, verifyExists: true, args =>
-                {
-                    args.Seek(timestamp);
-
-                    // In fast mode, disable accurate seeking to use keyframe-based seeking
-                    // This is faster but may not land on the exact frame
-                    if (options.Fast)
-                    {
-                        args.WithCustomArgument("-noaccurate_seek");
-                    }
-                })
-                .OutputToPipe(new StreamPipeSink(memoryStream), options =>
-                {
-                    options
-                        .WithVideoCodec(VideoCodec.Png)
-                        .WithFrameOutputCount(1)
-                        .ForceFormat("image2pipe");
-                })
-                .ProcessAsynchronously();
-
-            if (!success || memoryStream.Length == 0)
-            {
-                return null;
-            }
-
-            memoryStream.Position = 0;
-            return await Image.LoadAsync<Rgba32>(memoryStream);
+            using var decoder = new FFmpegAutoGenVideoDecoder(videoPath);
+            return await Task.Run(() => decoder.SeekAndExtractFrame(timestamp, options.Fast));
         }
         catch (Exception ex)
         {

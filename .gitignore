@@ -430,3 +430,5 @@ FodyWeavers.xsd
 # Custom entries
 .DS_Store
 .claude
+
+temp/
