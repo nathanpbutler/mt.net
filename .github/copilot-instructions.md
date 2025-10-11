@@ -81,6 +81,9 @@ All image operations use `SixLabors.ImageSharp` with specific patterns:
 - Load frames as `Image<Rgba32>`
 - Apply filters via `FilterService.ApplyFilters()`
 - Compose contact sheets with precise pixel calculations in `ImageComposer`
+- Text rendering via `SixLabors.Fonts` (differs slightly from FFmpeg's freetype)
+
+**Note**: Font rendering produces slightly different text appearance than mt's freetype at the same font size. This is a cosmetic limitation of using different rendering engines.
 
 ### Content Detection Algorithms
 Frame quality analysis uses specific thresholds:
@@ -132,6 +135,10 @@ Performance comparison (44 thumbnails / 4 columns, 1080p video):
 - **Large contact sheets** with many thumbnails can consume significant memory
 - **Filter chaining** applies sequentially - order matters for some filters
 
+### Known Limitations
+- **Font Rendering**: ImageSharp uses a different rendering engine than freetype (used by FFmpeg/mt), resulting in slightly different text appearance at the same font size
+- **Output Format Matching**: Header format, timestamps, and file sizes now match mt's output structure, but font rendering remains cosmetically different
+
 ## Project-Specific Conventions
 
 ### Error Handling Pattern
@@ -172,3 +179,12 @@ Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`
 
 ## Reference Implementation
 The `reference/original-mt/` directory contains the complete Go implementation as a git submodule. When making changes that affect output compatibility, reference the Go implementation's behavior for consistency.
+
+## Future Considerations
+
+**Potential Migration to FFmpeg.AutoGen for Image Composition**
+- **Current**: Uses SixLabors.ImageSharp for contact sheet creation and text rendering
+- **Under Consideration**: Migrate to FFmpeg's filter graph (scale, drawtext, tile/xstack, overlay)
+- **Rationale**: Would provide pixel-perfect text rendering matching mt (uses freetype) and potentially better performance
+- **Tradeoff**: More complex implementation, harder to debug, significant refactoring effort
+- **Status**: ImageSharp works well for current needs; migration would be for exact visual parity with mt

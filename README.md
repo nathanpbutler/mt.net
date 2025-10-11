@@ -193,6 +193,10 @@ The application supports configuration through:
 - **Configuration System**: JSON config support with environment variables and CLI overrides
 - **Video Processing**: ✅ **Migrated to FFmpeg.AutoGen** for direct libavcodec control and frame-level seeking
 - **Image Composition**: Full contact sheet creation with headers, timestamps, and watermarks
+  - ✅ **Header Format**: Matches mt's multi-line structure with labels (File Name, File Size, Duration, Resolution)
+  - ✅ **Dynamic Header Height**: Automatically adjusts to fit content with or without metadata
+  - ✅ **Binary Units**: File sizes display in GiB/MiB (matching mt)
+  - ✅ **Timestamp Format**: Always shows HH:MM:SS format (matching mt)
 - **Image Filtering**: All filter types implemented (greyscale, sepia, invert, fancy, cross, strip)
 - **Content Detection**: Blank and blur frame detection with configurable thresholds
 - **Output Management**: File handling, WebVTT generation, and multiple output formats
@@ -219,6 +223,10 @@ Performance comparison against the original Go implementation (44 thumbnails / 4
 - **Upload Functionality**: HTTP upload feature (placeholder only)
 - **Configuration Persistence**: --save-config, --config-file, --show-config (placeholders only)
 - **Enhanced Logging**: Serilog integration for structured logging
+
+### ⚠️ Known Limitations
+
+- **Font Rendering**: ImageSharp uses a different font rendering engine than freetype (used by FFmpeg/Go), resulting in slightly different text appearance at the same font size. This is a cosmetic difference that doesn't affect functionality.
 
 ### ⚠️ Prerequisites
 
@@ -308,6 +316,15 @@ This project is licensed under the GNU General Public License v3.0. See the [LIC
 1. **Unit Testing** - Add comprehensive test coverage
 2. **Documentation** - Expand usage examples and troubleshooting guides
 3. **Code Cleanup** - Remove legacy FFMpegCore references and dependencies
+
+### Future Considerations
+
+1. **FFmpeg.AutoGen for Image Composition** (Potential Refactor)
+   - Current: Uses SixLabors.ImageSharp for contact sheet creation and text rendering
+   - Consideration: Migrate to FFmpeg's filter graph for composition (scale, drawtext, tile/xstack, overlay)
+   - **Pros**: Pixel-perfect text rendering matching mt (uses freetype), potentially faster, one fewer dependency
+   - **Cons**: Complex filter graph syntax, less flexible than C# code, harder to debug, significant refactoring effort
+   - **Status**: Under consideration - ImageSharp works well, but FFmpeg would provide exact visual parity with mt
 
 ## Acknowledgments
 

@@ -164,10 +164,15 @@ dotnet run -- --help     # Show all options
 [Services/ImageComposer.cs](Services/ImageComposer.cs) - Complete contact sheet creation:
 
 - ✅ CreateContactSheet() - Create grid layout with configurable columns, padding, borders
-- ✅ DrawHeader() - Generate header with file metadata (filename, dimensions, duration, codec, fps, bitrate)
-- ✅ AddTimestamp() - Overlay timestamps on thumbnails with configurable opacity
+- ✅ CalculateHeaderHeight() - Dynamic header height calculation based on content
+- ✅ BuildHeaderText() - Construct header text matching mt's format (File Name:, File Size:, Duration:, Resolution:)
+- ✅ DrawHeader() - Generate header with file metadata in mt-compatible multi-line format
+- ✅ AddTimestamp() - Overlay timestamps on thumbnails with HH:MM:SS format (matching mt)
 - ✅ ApplyWatermark() - Apply watermarks to center or all thumbnails
+- ✅ FormatFileSize() - Binary units (GiB, MiB) matching mt's output
 - ✅ Customizable colors, fonts, and styling
+
+**Note**: Uses SixLabors.ImageSharp for rendering. Font rendering differs slightly from mt's freetype due to different rendering engines.
 
 #### ✅ Image Filtering (FilterService.cs)
 
@@ -286,6 +291,9 @@ All image operations use `SixLabors.ImageSharp` with specific patterns:
 - Load frames as `Image<Rgba32>`
 - Apply filters via `FilterService.ApplyFilters()`
 - Compose contact sheets with precise pixel calculations in `ImageComposer`
+- Text rendering via `SixLabors.Fonts` (differs slightly from FFmpeg's freetype)
+
+**Known Limitation**: Font rendering uses ImageSharp's engine, which produces slightly different text appearance than freetype (used by FFmpeg/mt) at the same font size. This is cosmetic and doesn't affect functionality.
 
 ### Content Detection Algorithms
 
@@ -402,6 +410,28 @@ Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`
 6. **Unit tests** - Add comprehensive test coverage
 7. **Documentation** - Add usage examples, troubleshooting guide
 8. **Code cleanup** - Remove legacy FFMpegCore references and dependencies
+
+### Future Considerations
+
+**FFmpeg.AutoGen for Image Composition** (Potential Refactor)
+
+- **Current State**: Uses SixLabors.ImageSharp for contact sheet creation and text rendering
+- **Consideration**: Migrate to FFmpeg's filter graph for composition
+  - Use `scale` filter for resizing thumbnails
+  - Use `drawtext` filter for timestamps/header (uses freetype, matches mt exactly)
+  - Use `tile` or `xstack` filters for grid layout
+  - Use `overlay` filter for watermarks
+- **Pros**:
+  - Pixel-perfect text rendering matching mt (freetype)
+  - Potentially faster (all in native FFmpeg)
+  - One fewer dependency (remove ImageSharp)
+  - Exact visual parity with original mt
+- **Cons**:
+  - Complex filter graph syntax
+  - Less flexible than C# code
+  - Harder to debug
+  - Significant refactoring effort
+- **Status**: Under consideration - ImageSharp works well for current needs
 
 ## Key Reference Files
 
