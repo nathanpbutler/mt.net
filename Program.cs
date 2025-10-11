@@ -1,10 +1,8 @@
-using System.CommandLine;
 using nathanbutlerDEV.mt.net.Commands;
 using nathanbutlerDEV.mt.net.Configuration;
-using nathanbutlerDEV.mt.net.Utilities;
 using Serilog;
 
-namespace MtNet;
+namespace nathanbutlerDEV.mt.net;
 
 class Program
 {
@@ -17,9 +15,6 @@ class Program
 
         try
         {
-            // Initialize FFmpeg libraries
-            FFmpegHelper.Initialize();
-
             // Build configuration
             var configuration = ConfigurationBuilder.Build(args);
 

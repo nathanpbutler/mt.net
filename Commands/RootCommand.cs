@@ -1,6 +1,7 @@
 using System.CommandLine;
 using nathanbutlerDEV.mt.net.Models;
 using nathanbutlerDEV.mt.net.Services;
+using nathanbutlerDEV.mt.net.Utilities;
 
 namespace nathanbutlerDEV.mt.net.Commands;
 
@@ -464,6 +465,9 @@ public static class RootCommandBuilder
 
             try
             {
+                // Initialize FFmpeg libraries
+                FFmpegHelper.Initialize();
+                
                 await ProcessVideoAsync(file.FullName, options);
                 return 0;
             }

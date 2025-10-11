@@ -16,9 +16,14 @@ namespace nathanbutlerDEV.mt.net.Services;
 /// </summary>
 public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 {
+    // Service for applying image filters
     private readonly FFmpegFilterService _filterService;
+    // Disposal flag
     private bool _disposed = false;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FFmpegFilterGraphComposer"/> class.
+    /// </summary>
     public FFmpegFilterGraphComposer()
     {
         _filterService = new FFmpegFilterService();
@@ -27,6 +32,10 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Creates a contact sheet from extracted frames using FFmpeg filter graphs.
     /// </summary>
+    /// <param name="frames">List of frames with their timestamps.</param>
+    /// <param name="headerInfo">Information for the header.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <returns>The composed contact sheet image.</returns>
     public Image<Rgba32> CreateContactSheet(
         List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
         HeaderInfo headerInfo,
@@ -37,6 +46,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             throw new ArgumentException("No frames provided for contact sheet");
         }
 
+        // TODO: Fully migrate to FFmpeg filter graphs for the entire contact sheet composition
         // For now, we'll implement a hybrid approach:
         // 1. Use FFmpeg filter graphs for individual frame processing (resize, text, filters)
         // 2. Use basic composition for the final layout
@@ -71,6 +81,11 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Processes a single frame through FFmpeg filters (resize, timestamp, borders, watermarks).
     /// </summary>
+    /// <param name="frame">The input frame to process.</param>
+    /// <param name="timestamp">The timestamp of the frame.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <param name="isMiddleFrame">Indicates if this is the middle frame (for special watermarking).</param>
+    /// <returns>The processed frame image.</returns>
     private Image<Rgba32> ProcessFrameWithFilters(
         Image<Rgba32> frame,
         TimeSpan timestamp,
@@ -163,6 +178,11 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Builds the filter specification string for frame processing.
     /// </summary>
+    /// <param name="width">Original frame width.</param>
+    /// <param name="height">Original frame height.</param>
+    /// <param name="timestamp">Timestamp of the frame.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <returns>The filter specification string.</returns>
     private static string BuildFrameFilterSpec(int width, int height, TimeSpan timestamp, ThumbnailOptions options)
     {
         var filters = new List<string>();
@@ -185,8 +205,8 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             var opacity = options.TimestampOpacity;
 
             // Position: bottom-left with padding
-            var x = 5;
-            var y = $"h-{fontSize}-5"; // bottom position
+            var textPaddingX = 5;
+            var textPaddingY = 5;
 
             if (fontFile != null)
             {
@@ -194,11 +214,10 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
                 var escapedFont = fontFile.Replace(":", "\\:").Replace("\\", "\\\\");
                 var escapedText = timestampText.Replace(":", "\\:");
 
-                // Add semi-transparent background box
-                filters.Add($"drawbox=x=0:y=h-{fontSize + 10}:w=iw:h={fontSize + 10}:color=black@0.7:t=fill");
-
-                // Add text overlay
-                filters.Add($"drawtext=fontfile='{escapedFont}':text='{escapedText}':fontcolor=white@{opacity}:fontsize={fontSize}:x={x}:y={y}");
+                // Use drawtext's built-in box feature for perfect alignment
+                // box=1 enables background box, boxcolor sets the color, boxborderw sets padding
+                // Position text at bottom-left with padding
+                filters.Add($"drawtext=fontfile='{escapedFont}':text='{escapedText}':fontcolor=white@{opacity}:fontsize={fontSize}:x={textPaddingX}:y=h-th-{textPaddingY}:box=1:boxcolor=black@0.7:boxborderw=5");
             }
         }
 
@@ -214,6 +233,13 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Creates and configures a filter graph from a filter specification.
     /// </summary>
+    /// <param name="filterGraph">The filter graph to configure.</param>
+    /// <param name="bufferSrcCtx">Pointer to the buffer source context.</param>
+    /// <param name="bufferSinkCtx">Pointer to the buffer sink context.</param>
+    /// <param name="width">Width of the input frames.</param>
+    /// <param name="height">Height of the input frames.</param>
+    /// <param name="filterSpec">The filter specification string.</param>
+    /// <returns>True if successful, false otherwise.</returns>
     private bool CreateFilterGraph(
         AVFilterGraph* filterGraph,
         AVFilterContext** bufferSrcCtx,
@@ -296,14 +322,21 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Formats a timestamp as HH:MM:SS.
     /// </summary>
+    /// <param name="timestamp">The timestamp to format.</param>
+    /// <returns>The formatted timestamp string.</returns>
     private static string FormatTimestamp(TimeSpan timestamp)
     {
+        // TODO: Figure out timecode formatting
         return $"{(int)timestamp.TotalHours:D2}:{timestamp.Minutes:D2}:{timestamp.Seconds:D2}";
     }
 
     /// <summary>
     /// Composes processed frames into a contact sheet with header.
     /// </summary>
+    /// <param name="frames">List of processed frames with timestamps.</param>
+    /// <param name="headerInfo">Information for the header.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <returns>The composed contact sheet image.</returns>
     private Image<Rgba32> ComposeContactSheet(
         List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
         HeaderInfo headerInfo,
@@ -366,6 +399,10 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Creates a header image using FFmpeg drawtext filters.
     /// </summary>
+    /// <param name="headerInfo">Information for the header.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <param name="width">Width of the header.</param>
+    /// <returns>The created header image, or null if creation failed.</returns>
     private Image<Rgba32>? CreateHeaderWithFFmpeg(HeaderInfo headerInfo, ThumbnailOptions options, int width)
     {
         try
@@ -414,14 +451,18 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Builds the header text lines.
     /// </summary>
+    /// <param name="headerInfo">Information for the header.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <returns>List of header text lines.</returns>
     private static List<string> BuildHeaderTextLines(HeaderInfo headerInfo, ThumbnailOptions options)
     {
-        var lines = new List<string>();
-
-        lines.Add($"File Name: {headerInfo.Filename}");
-        lines.Add($"File Size: {FormatFileSize(headerInfo.FileSize)}");
-        lines.Add($"Duration: {FormatDurationForHeader(headerInfo.Duration)}");
-        lines.Add($"Resolution: {headerInfo.Width}x{headerInfo.Height}");
+        var lines = new List<string>
+        {
+            $"File Name: {headerInfo.Filename}",
+            $"File Size: {FormatFileSize(headerInfo.FileSize)}",
+            $"Duration: {FormatDurationForHeader(headerInfo.Duration)}",
+            $"Resolution: {headerInfo.Width}x{headerInfo.Height}"
+        };
 
         if (options.HeaderMeta)
         {
@@ -440,6 +481,10 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Builds filter specification for drawing header text.
     /// </summary>
+    /// <param name="lines">Header text lines.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <param name="fgColor">Foreground color for text.</param>
+    /// <returns>Filter specification string.</returns>
     private static string BuildHeaderFilterSpec(List<string> lines, ThumbnailOptions options, Rgba32 fgColor)
     {
         var fontFile = FindFontFile(options.FontPath ?? "Arial");
@@ -481,6 +526,8 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Escapes text for use in FFmpeg filter strings.
     /// </summary>
+    /// <param name="text">The text to escape.</param>
+    /// <returns>Escaped text.</returns>
     private static string EscapeFilterText(string text)
     {
         return text
@@ -494,6 +541,11 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Applies a filter specification to an AVFrame.
     /// </summary>
+    /// <param name="inputFrame">The input AVFrame to filter.</param>
+    /// <param name="width">Width of the frame.</param>
+    /// <param name="height">Height of the frame.</param>
+    /// <param name="filterSpec">The filter specification string.</param>
+    /// <returns>The filtered AVFrame, or null if filtering failed.</returns>
     private AVFrame* ApplyFilterToFrame(AVFrame* inputFrame, int width, int height, string filterSpec)
     {
         if (string.IsNullOrEmpty(filterSpec))
@@ -541,6 +593,8 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Formats file size using binary units (KiB, MiB, GiB).
     /// </summary>
+    /// <param name="bytes">File size in bytes.</param>
+    /// <returns>Formatted file size string.</returns>
     private static string FormatFileSize(long bytes)
     {
         string[] sizes = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -559,14 +613,21 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Formats duration as HH:MM:SS for header display.
     /// </summary>
+    /// <param name="duration">The duration to format.</param>
+    /// <returns>The formatted duration string.</returns>
     private static string FormatDurationForHeader(TimeSpan duration)
     {
+        // TODO: Figure out timecode formatting
         return $"{(int)duration.TotalHours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}";
     }
 
     /// <summary>
     /// Creates a blank canvas with specified background color using FFmpeg.
     /// </summary>
+    /// <param name="width">Width of the canvas.</param>
+    /// <param name="height">Height of the canvas.</param>
+    /// <param name="bgColorString">Background color string (e.g., "#RRGGBB").</param>
+    /// <returns>The created canvas image.</returns>
     private static Image<Rgba32> CreateCanvasWithFFmpeg(int width, int height, string bgColorString)
     {
         // TODO: Implement using FFmpeg color source filter
@@ -582,6 +643,9 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// Balanced padding: 10px top + (lineHeight * numLines) + 10px bottom
     /// Must account for DPI-scaled line height and font size.
     /// </summary>
+    /// <param name="headerInfo">Information for the header.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <returns>The calculated header height in pixels.</returns>
     private static int CalculateHeaderHeight(HeaderInfo headerInfo, ThumbnailOptions options)
     {
         var fontSize = options.FontSize;
@@ -589,6 +653,8 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         // Use DPI-scaled line height to match actual rendering
         var lineHeight = (int)((fontSize + 4) * 96.0 / 72.0);
 
+        // TODO: Calculate based on headerInfo content
+        // For now, assume fixed number of lines based on options
         var lines = 4; // File Name, File Size, Duration, Resolution
 
         if (options.HeaderMeta)
@@ -601,13 +667,14 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             lines += 1; // Comment line
         }
 
-        // Balanced padding: 10px top + (lineHeight * lines) + 10px bottom
-        return 10 + (lineHeight * lines) + 10;
+        return lineHeight * lines;
     }
 
     /// <summary>
     /// Converts an ImageSharp Image to FFmpeg AVFrame.
     /// </summary>
+    /// <param name="image">The input ImageSharp image.</param>
+    /// <returns>The allocated AVFrame with image data.</returns>
     private AVFrame* ImageToAVFrame(Image<Rgba32> image)
     {
         var frame = ffmpeg.av_frame_alloc();
@@ -672,6 +739,8 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Converts an FFmpeg AVFrame to ImageSharp Image.
     /// </summary>
+    /// <param name="frame">The input AVFrame.</param>
+    /// <returns>The converted ImageSharp image.</returns>
     private Image<Rgba32> AVFrameToImage(AVFrame* frame)
     {
         var image = new Image<Rgba32>(frame->width, frame->height);
@@ -705,6 +774,8 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <summary>
     /// Finds a suitable font file for drawtext filter.
     /// </summary>
+    /// <param name="fontName">The font name or path.</param>
+    /// <returns>The path to the font file, or null if not found.</returns>
     private static string? FindFontFile(string fontName)
     {
         // Common font directories on different platforms
@@ -758,6 +829,9 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// Disposes the resources used by the <see cref="FFmpegFilterGraphComposer"/> class.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;

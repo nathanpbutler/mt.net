@@ -11,12 +11,17 @@ namespace nathanbutlerDEV.mt.net.Services;
 /// </summary>
 public sealed unsafe class FFmpegFilterService : IDisposable
 {
+    // Random number generator for filter effects
     private static readonly Random Random = new();
+    // Disposal flag
     private bool _disposed = false;
 
     /// <summary>
     /// Applies multiple filters to an image based on a filter string.
     /// </summary>
+    /// <param name="image">The input image to process.</param>
+    /// <param name="filterString">A comma-separated string of filter names to apply.</param>
+    /// <returns>The processed image after applying the filters.</returns>
     public Image<Rgba32> ApplyFilters(Image<Rgba32> image, string filterString)
     {
         if (string.IsNullOrEmpty(filterString) || filterString.Equals("none", StringComparison.OrdinalIgnoreCase))
@@ -43,6 +48,9 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Applies a single filter to an image.
     /// </summary>
+    /// <param name="image">The input image to process.</param>
+    /// <param name="filterName">The name of the filter to apply.</param>
+    /// <returns>The processed image after applying the filter.</returns>
     private Image<Rgba32> ApplyFilter(Image<Rgba32> image, string filterName)
     {
         return filterName.ToLowerInvariant() switch
@@ -60,6 +68,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Applies greyscale filter using FFmpeg colorchannelmixer.
     /// </summary>
+    /// <param name="image">The input image to process.</param>
+    /// <returns>The processed image after applying the greyscale filter.</returns>
     private Image<Rgba32> ApplyGreyscaleFFmpeg(Image<Rgba32> image)
     {
         var filterSpec = "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3";
@@ -69,6 +79,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Applies sepia filter using FFmpeg colorchannelmixer.
     /// </summary>
+    /// <param name="image">The input image to process.</param>
+    /// <returns>The processed image after applying the sepia filter.</returns>
     private Image<Rgba32> ApplySepiaFFmpeg(Image<Rgba32> image)
     {
         var filterSpec = "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131";
@@ -78,6 +90,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Applies invert filter using FFmpeg negate.
     /// </summary>
+    /// <param name="image">The input image to process.</param>
+    /// <returns>The processed image after applying the invert filter.</returns>
     private Image<Rgba32> ApplyInvertFFmpeg(Image<Rgba32> image)
     {
         var filterSpec = "negate";
@@ -87,6 +101,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Applies fancy rotation filter using FFmpeg rotate.
     /// </summary>
+    /// <param name="image">The input image to process.</param>
+    /// <returns>The processed image after applying the fancy rotation filter.</returns>
     private Image<Rgba32> ApplyFancyFFmpeg(Image<Rgba32> image)
     {
         // Random rotation between -15 and 15 degrees
@@ -101,6 +117,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Applies cross-processing effect using FFmpeg curves and color adjustments.
     /// </summary>
+    /// <param name="image">The input image to process.</param>
+    /// <returns>The processed image after applying the cross-processing effect.</returns>
     private Image<Rgba32> ApplyCrossProcessingFFmpeg(Image<Rgba32> image)
     {
         // Cross processing: shift colors, increase saturation and contrast
@@ -111,6 +129,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Applies film strip effect using FFmpeg drawbox.
     /// </summary>
+    /// <param name="image">The input image to process.</param>
+    /// <returns>The processed image after applying the film strip effect.</returns>
     private Image<Rgba32> ApplyStripFFmpeg(Image<Rgba32> image)
     {
         var sprocketWidth = image.Width / 20;
@@ -120,11 +140,12 @@ public sealed unsafe class FFmpegFilterService : IDisposable
         var holeX = sprocketWidth / 2;
 
         // Build filter for film strip effect
-        var filters = new List<string>();
-
-        // Draw black borders on left and right
-        filters.Add($"drawbox=x=0:y=0:w={sprocketWidth}:h=ih:color=black:t=fill");
-        filters.Add($"drawbox=x=iw-{sprocketWidth}:y=0:w={sprocketWidth}:h=ih:color=black:t=fill");
+        var filters = new List<string>
+        {
+            // Draw black borders on left and right
+            $"drawbox=x=0:y=0:w={sprocketWidth}:h=ih:color=black:t=fill",
+            $"drawbox=x=iw-{sprocketWidth}:y=0:w={sprocketWidth}:h=ih:color=black:t=fill"
+        };
 
         // Draw sprocket holes (simplified - just draw white boxes)
         for (int y = sprocketHeight / 2; y < image.Height; y += sprocketSpacing)
@@ -143,6 +164,9 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Applies an FFmpeg filter specification to an image.
     /// </summary>
+    /// <param name="image">The input image to process.</param>
+    /// <param name="filterSpec">The FFmpeg filter specification string.</param>
+    /// <returns>The processed image after applying the filter.</returns>
     private Image<Rgba32> ApplyFFmpegFilter(Image<Rgba32> image, string filterSpec)
     {
         AVFilterGraph* filterGraph = null;
@@ -217,6 +241,13 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Creates and configures a filter graph.
     /// </summary>
+    /// <param name="filterGraph">The filter graph to configure.</param>
+    /// <param name="bufferSrcCtx">Pointer to the buffer source context.</param>
+    /// <param name="bufferSinkCtx">Pointer to the buffer sink context.</param>
+    /// <param name="width">Width of the input image.</param>
+    /// <param name="height">Height of the input image.</param>
+    /// <param name="filterSpec">The FFmpeg filter specification string.</param>
+    /// <returns>True if the filter graph was created successfully; otherwise, false.</returns>
     private bool CreateFilterGraph(
         AVFilterGraph* filterGraph,
         AVFilterContext** bufferSrcCtx,
@@ -278,6 +309,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Converts ImageSharp Image to AVFrame.
     /// </summary>
+    /// <param name="image">The input image to convert.</param>
+    /// <returns>The allocated AVFrame containing the image data.</returns>
     private AVFrame* ImageToAVFrame(Image<Rgba32> image)
     {
         var frame = ffmpeg.av_frame_alloc();
@@ -332,6 +365,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <summary>
     /// Converts AVFrame to ImageSharp Image.
     /// </summary>
+    /// <param name="frame">The input AVFrame to convert.</param>
+    /// <returns>The converted ImageSharp Image.</returns>
     private Image<Rgba32> AVFrameToImage(AVFrame* frame)
     {
         var image = new Image<Rgba32>(frame->width, frame->height);
@@ -356,6 +391,9 @@ public sealed unsafe class FFmpegFilterService : IDisposable
         return image;
     }
 
+    /// <summary>
+    /// Disposes the service and releases resources.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;
