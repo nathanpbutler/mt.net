@@ -8,6 +8,14 @@ namespace nathanbutlerDEV.mt.net.Services;
 public class VideoProcessor
 {
     /// <summary>
+    /// Supported video file extensions.
+    /// </summary>
+    public static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".mpeg", ".mpg", ".3gp"
+    };
+    
+    /// <summary>
     /// Extracts metadata from the specified video file using FFmpeg.AutoGen.
     /// </summary>
     /// <param name="videoPath">The path to the video file.</param>

@@ -200,7 +200,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         if (!options.DisableTimestamps)
         {
             var timestampText = FormatTimestamp(timestamp);
-            var fontFile = FindFontFile(options.FontPath ?? "Arial");
+            var fontFile = FindFontFile(options.FontPath ?? "Roboto-Regular");
             var fontSize = options.FontSize;
             var opacity = options.TimestampOpacity;
 
@@ -211,13 +211,13 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             if (fontFile != null)
             {
                 // Escape special characters in font path and text
-                var escapedFont = fontFile.Replace(":", "\\:").Replace("\\", "\\\\");
-                var escapedText = timestampText.Replace(":", "\\:");
+                var fontPath = fontFile.Replace("\\", "/").Replace(":", "\\\\:").Replace(" ", "\\ ");
+                var escapedText = EscapeFilterText(timestampText);
 
                 // Use drawtext's built-in box feature for perfect alignment
                 // box=1 enables background box, boxcolor sets the color, boxborderw sets padding
                 // Position text at bottom-left with padding
-                filters.Add($"drawtext=fontfile='{escapedFont}':text='{escapedText}':fontcolor=white@{opacity}:fontsize={fontSize}:x={textPaddingX}:y=h-th-{textPaddingY}:box=1:boxcolor=black@0.7:boxborderw=5");
+                filters.Add($"drawtext=fontfile={fontPath}:text='{escapedText}':fontcolor=white@{opacity}:fontsize={fontSize}:x={textPaddingX}:y=h-th-{textPaddingY}:box=1:boxcolor=black@0.7:boxborderw=5");
             }
         }
 
@@ -425,6 +425,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             try
             {
                 var filterSpec = BuildHeaderFilterSpec(headerLines, options, fgColor);
+                
                 var processedFrame = ApplyFilterToFrame(frame, width, height, filterSpec);
 
                 if (processedFrame != null)
@@ -487,7 +488,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <returns>Filter specification string.</returns>
     private static string BuildHeaderFilterSpec(List<string> lines, ThumbnailOptions options, Rgba32 fgColor)
     {
-        var fontFile = FindFontFile(options.FontPath ?? "Arial");
+        var fontFile = FindFontFile(options.FontPath ?? "Roboto-Regular");
         if (fontFile == null)
         {
             return ""; // No filter if no font found
@@ -504,7 +505,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         // Original Go: PointToFix32(fontSize+4) at 96 DPI
         var lineHeightPixels = (int)((baseFontSize + 4) * 96.0 / 72.0);
 
-        var escapedFont = fontFile.Replace(":", "\\:").Replace("\\", "\\\\");
+        var fontPath = fontFile.Replace("\\", "/").Replace(":", "\\\\:").Replace(" ", "\\ ");
 
         // Convert color to hex
         var colorHex = $"0x{fgColor.R:X2}{fgColor.G:X2}{fgColor.B:X2}";
@@ -517,7 +518,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             // First line at y=10, subsequent lines spaced by lineHeight
             var y = 10 + (lineHeightPixels * i);
 
-            filters.Add($"drawtext=fontfile='{escapedFont}':text='{escapedText}':fontcolor={colorHex}:fontsize={headerFontSize}:x=10:y={y}");
+            filters.Add($"drawtext=fontfile={fontPath}:text='{escapedText}':fontcolor={colorHex}:fontsize={headerFontSize}:x=10:y={y}");
         }
 
         return string.Join(",", filters);
@@ -530,12 +531,18 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <returns>Escaped text.</returns>
     private static string EscapeFilterText(string text)
     {
+        // FFmpeg drawtext filter requires escaping special characters
+        // DO NOT add quotes - just escape the special chars
         return text
-            .Replace("\\", "\\\\")
-            .Replace("'", "\\'")
-            .Replace(":", "\\:")
-            .Replace("[", "\\[")
-            .Replace("]", "\\]");
+            .Replace("\\", "\\\\")  // Escape backslash first
+            .Replace(":", "\\:")     // Escape colons in timestamps
+            .Replace("'", "\\'")     // Escape single quotes
+            .Replace(",", "\\,")     // Escape commas
+            .Replace("[", "\\[")     // Escape brackets
+            .Replace("]", "\\]")
+            .Replace(";", "\\;")     // Escape semicolons
+            .Replace("=", "\\=");    // Escape equals
+                                     // Note: Don't escape spaces in text - they're fine
     }
 
     /// <summary>
@@ -811,7 +818,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         }
 
         // Try common font names as fallback
-        var fallbackFonts = new[] { "Arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf" };
+        var fallbackFonts = new[] { "Roboto-Regular.ttf", "Arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf" };
         foreach (var dir in fontDirs)
         {
             if (!Directory.Exists(dir)) continue;

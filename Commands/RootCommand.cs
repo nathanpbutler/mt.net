@@ -1,4 +1,7 @@
 using System.CommandLine;
+using System.CommandLine.Completions;
+using System.CommandLine.Help;
+using System.CommandLine.Parsing;
 using nathanbutlerDEV.mt.net.Models;
 using nathanbutlerDEV.mt.net.Services;
 using nathanbutlerDEV.mt.net.Utilities;
@@ -7,81 +10,103 @@ namespace nathanbutlerDEV.mt.net.Commands;
 
 public static class RootCommandBuilder
 {
+    /// <summary>
+    /// Creates the root command with all options and arguments.
+    /// </summary>
+    /// <returns>The configured RootCommand instance.</returns>
     public static RootCommand CreateRootCommand()
     {
+        // Create root command
         var rootCommand = new RootCommand("mt.net - Media Thumbnailing Tool");
+
+        // Remove "-h" alias from help to avoid conflict with height option
+        for (int i = 0; i < rootCommand.Options.Count; i++)
+        {
+            if (rootCommand.Options[i] is HelpOption helpOption)
+            {
+                helpOption.Aliases.Remove("-h");
+                break;
+            }
+        }
 
         // File argument (required) - the video file to process
         var fileArgument = new Argument<FileInfo>("file")
         {
-            Description = "Video file to process"
+            Description = "Video file to process",
+            Arity = ArgumentArity.ExactlyOne
         };
 
         // Global/Config options
-        var configOption = new Option<FileInfo?>("--config")
+        var configOption = new Option<FileInfo>("--config")
         {
-            Description = "Configuration file path"
+            Description = "Configuration file path",
+            Arity = ArgumentArity.ExactlyOne
         };
 
-        var verboseOption = new Option<bool>("--verbose")
+        var verboseOption = new Option<bool>("--verbose", ["-v"])
         {
-            Description = "Enable verbose logging"
-        };
-        verboseOption.Aliases.Add("-v");
-
-        var versionOption = new Option<bool>("--version")
-        {
-            Description = "Show version information"
+            Description = "Enable verbose logging",
+            Arity = ArgumentArity.ExactlyOne
         };
 
         var composerOption = new Option<string>("--composer")
         {
             Description = "Choose image composer: ffmpeg, imagesharp",
-            CompletionSources = { "ffmpeg", "imagesharp" },
+            // CompletionSources = { "ffmpeg", "imagesharp" },
             DefaultValueFactory = _ => "ffmpeg" // FFMpeg.AutoGen is now default
         };
+        composerOption.CompletionSources.Add(ctx =>
+        {
+            return [new CompletionItem("ffmpeg"), new CompletionItem("imagesharp")];
+        });
 
         // Basic thumbnail options
-        var numCapsOption = new Option<int>("--numcaps")
+        var numCapsOption = new Option<int>("--numcaps", ["-n"])
         {
             Description = "Number of captures to make",
             DefaultValueFactory = _ => 4
         };
-        numCapsOption.Aliases.Add("-n");
 
-        var columnsOption = new Option<int>("--columns")
+        var columnsOption = new Option<int>("--columns", ["-c"])
         {
             Description = "Number of columns in output",
             DefaultValueFactory = _ => 2
         };
-        columnsOption.Aliases.Add("-c");
 
-        var widthOption = new Option<int>("--width")
+        var widthOption = new Option<int>("--width", ["-w"])
         {
             Description = "Width of individual thumbnails in pixels",
             DefaultValueFactory = _ => 400
         };
-        widthOption.Aliases.Add("-w");
 
-        var heightOption = new Option<int>("--height")
+        var heightOption = new Option<int>("--height", ["-h"])
         {
             Description = "Height of individual thumbnails in pixels (0 = auto)",
             DefaultValueFactory = _ => 0
         };
 
-        var paddingOption = new Option<int>("--padding")
+        var paddingOption = new Option<int>("--padding", ["-p"])
         {
             Description = "Padding between images in pixels",
             DefaultValueFactory = _ => 10
         };
-        paddingOption.Aliases.Add("-p");
 
-        var outputOption = new Option<string>("--output")
+        var outputOption = new Option<string>("--output", ["-o"])
         {
             Description = "Output filename pattern",
             DefaultValueFactory = _ => "{{.Path}}{{.Name}}.jpg"
         };
-        outputOption.Aliases.Add("-o");
+
+        outputOption.CompletionSources.Add(ctx =>
+        {
+            var file = ctx.ParseResult.GetValue(fileArgument); // Interesting...
+            if (file != null)
+            {
+                var directory = file.DirectoryName ?? ".";
+                return [new CompletionItem(Path.Combine(directory, $"{Path.GetFileNameWithoutExtension(file.Name)}.jpg"))];
+            }
+            return [];
+        });
 
         // Time options
         var fromOption = new Option<string>("--from")
@@ -125,7 +150,7 @@ public static class RootCommandBuilder
         var fontOption = new Option<string>("--font")
         {
             Description = "Font to use for timestamps and header",
-            DefaultValueFactory = _ => "DroidSans.ttf"
+            DefaultValueFactory = _ => "Roboto-Regular.ttf"
         };
         fontOption.Aliases.Add("-f");
 
@@ -299,13 +324,12 @@ public static class RootCommandBuilder
 
         // Add argument and all options to root command
         rootCommand.Arguments.Add(fileArgument);
-        
+
         // Global options
         rootCommand.Options.Add(configOption);
         rootCommand.Options.Add(verboseOption);
-        rootCommand.Options.Add(versionOption);
         rootCommand.Options.Add(composerOption);
-        
+
         // Basic options
         rootCommand.Options.Add(numCapsOption);
         rootCommand.Options.Add(columnsOption);
@@ -313,17 +337,17 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(heightOption);
         rootCommand.Options.Add(paddingOption);
         rootCommand.Options.Add(outputOption);
-        
+
         // Time options
         rootCommand.Options.Add(fromOption);
         rootCommand.Options.Add(toOption);
         rootCommand.Options.Add(intervalOption);
-        
+
         // Output control
         rootCommand.Options.Add(singleImagesOption);
         rootCommand.Options.Add(overwriteOption);
         rootCommand.Options.Add(skipExistingOption);
-        
+
         // Visual customization
         rootCommand.Options.Add(fontOption);
         rootCommand.Options.Add(fontSizeOption);
@@ -332,40 +356,40 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(headerOption);
         rootCommand.Options.Add(headerMetaOption);
         rootCommand.Options.Add(headerImageOption);
-        
+
         // Colors and styling
         rootCommand.Options.Add(bgContentOption);
         rootCommand.Options.Add(bgHeaderOption);
         rootCommand.Options.Add(fgHeaderOption);
         rootCommand.Options.Add(borderOption);
-        
+
         // Watermarks
         rootCommand.Options.Add(watermarkOption);
         rootCommand.Options.Add(watermarkAllOption);
-        
+
         // Filters
         rootCommand.Options.Add(filterOption);
         rootCommand.Options.Add(filtersOption);
-        
+
         // Processing
         rootCommand.Options.Add(skipBlankOption);
         rootCommand.Options.Add(skipBlurryOption);
         rootCommand.Options.Add(skipCreditsOption);
         rootCommand.Options.Add(fastOption);
         rootCommand.Options.Add(sfwOption);
-        
+
         // WebVTT
         rootCommand.Options.Add(vttOption);
         rootCommand.Options.Add(webVttOption);
-        
+
         // Upload
         rootCommand.Options.Add(uploadOption);
         rootCommand.Options.Add(uploadUrlOption);
-        
+
         // Thresholds
         rootCommand.Options.Add(blurThresholdOption);
         rootCommand.Options.Add(blankThresholdOption);
-        
+
         // Misc
         rootCommand.Options.Add(commentOption);
         rootCommand.Options.Add(saveConfigOption);
@@ -396,7 +420,7 @@ public static class RootCommandBuilder
             {
                 // Composer option
                 Composer = parseResult.GetValue(composerOption)!,
-                
+
                 // Basic options
                 NumCaps = parseResult.GetValue(numCapsOption),
                 Columns = parseResult.GetValue(columnsOption),
@@ -478,7 +502,7 @@ public static class RootCommandBuilder
             {
                 // Initialize FFmpeg libraries
                 FFmpegHelper.Initialize();
-                
+
                 await ProcessVideoAsync(file.FullName, options);
                 return 0;
             }

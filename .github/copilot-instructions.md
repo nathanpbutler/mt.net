@@ -7,6 +7,7 @@
 ## Architecture & Core Components
 
 ### Service-Oriented Architecture
+
 The application uses a stateless service pattern with clear separation of concerns:
 
 - **VideoProcessor** (`Services/VideoProcessor.cs`) - FFmpeg integration for metadata extraction and frame capture
@@ -17,6 +18,7 @@ The application uses a stateless service pattern with clear separation of concer
 - **OutputService** (`Services/OutputService.cs`) - File I/O, WebVTT generation, and filename pattern substitution
 
 ### Processing Pipeline Flow
+
 ```csharp
 // Main pipeline in Commands/RootCommand.cs ProcessVideoAsync()
 Video Input → Extract Metadata → Calculate Timestamps → Extract Frames 
@@ -25,6 +27,7 @@ Video Input → Extract Metadata → Calculate Timestamps → Extract Frames
 ```
 
 ### Configuration System
+
 - **ThumbnailOptions** (`Models/ThumbnailOptions.cs`) - Single comprehensive options class with 40+ properties
 - **System.CommandLine** - Direct CLI option mapping to ThumbnailOptions properties
 - **Pattern**: Each CLI option maps to a ThumbnailOptions property with default values and aliases
@@ -33,13 +36,17 @@ Video Input → Extract Metadata → Calculate Timestamps → Extract Frames
 ## Key Development Patterns
 
 ### Temp Directory Workflow
+
 The `temp/` directory serves as temporary storage for current development work:
+
 - **Check temp/ first** - Before sourcing external documentation or code, check if it's already available in temp/
 - **Ask before sourcing** - If needed code/docs aren't in temp/, ask the user to source them before proceeding
 - **Current focus**: FFmpeg.AutoGen migration work is in `temp/FFmpeg.AutoGen/`
 
 ### Service Instantiation Pattern
+
 Services are instantiated per-operation (not injected) in the main processing method:
+
 ```csharp
 var videoProcessor = new VideoProcessor();
 var contentDetection = new ContentDetectionService();
@@ -48,7 +55,9 @@ var filterService = new FilterService();
 ```
 
 ### Async Resource Management
+
 Critical pattern for image processing - always dispose images to prevent memory leaks:
+
 ```csharp
 foreach (var (frame, _) in frames)
 {
@@ -57,7 +66,9 @@ foreach (var (frame, _) in frames)
 ```
 
 ### CLI Option Declaration Pattern
+
 Options follow a consistent pattern in `Commands/RootCommand.cs`:
+
 ```csharp
 var numCapsOption = new Option<int>("--numcaps")
 {
@@ -68,11 +79,13 @@ numCapsOption.Aliases.Add("-n");
 ```
 
 ### Filename Pattern Substitution
+
 Output paths use Go-template style patterns (`{{.Path}}{{.Name}}.jpg`) processed in `OutputService.BuildOutputPath()`.
 
 ## Critical Dependencies & Integration Points
 
 ### FFmpeg Integration (✅ Migration Complete)
+
 - **Current**: Uses `FFmpeg.AutoGen` for direct libavcodec control and video processing
 - **Previous**: Migrated from `FFMpegCore` due to performance limitations
 - **Benefits**: Direct P/Invoke bindings providing full control over frame-level seeking
@@ -83,6 +96,7 @@ Output paths use Go-template style patterns (`{{.Path}}{{.Name}}.jpg`) processed
 **Default (FFmpeg.AutoGen - Hybrid)**: Uses FFmpeg for frame operations, ImageSharp for final composition:
 
 **Per-Frame Processing (FFmpeg.AutoGen):**
+
 - Load frames as `Image<Rgba32>` from video
 - Convert ImageSharp → AVFrame
 - Process with FFmpeg filter graphs:
@@ -94,22 +108,26 @@ Output paths use Go-template style patterns (`{{.Path}}{{.Name}}.jpg`) processed
 - Convert AVFrame → ImageSharp
 
 **Final Composition (ImageSharp):**
+
 - Create canvas with background color
 - Arrange processed frames in grid layout (DrawImage)
 - Position header
 - Apply watermarks
 
 **Legacy (ImageSharp)**: Available via `--composer imagesharp`:
+
 - Load frames as `Image<Rgba32>`
 - Resize with ImageSharp
 - Apply filters via `FilterService.ApplyFilters()`
 - Text rendering via `SixLabors.Fonts` (differs from freetype)
 - Compose contact sheets in `ImageComposer`
 
-**Key Difference**: FFmpeg composer achieves **pixel-perfect text** matching Go mt (freetype), while keeping grid layout simple in C#. ImageSharp composer uses different text engine.
+**Key Difference**: FFmpeg composer achieves **pixel-perfect text** matching Go mt (freetype), while keeping grid layout simple in C# code. ImageSharp composer uses different text engine.
 
 ### Content Detection Algorithms
+
 Frame quality analysis uses specific thresholds:
+
 - **Blank detection**: Histogram analysis with configurable threshold (default: 85)
 - **Blur detection**: Laplacian variance (default: 62)
 - **Retry logic**: Up to 3 attempts to find suitable frames
@@ -131,10 +149,12 @@ dotnet run -- video.mp4 --filter greyscale,sepia --skip-blank --header-meta
 ## Testing Strategy & Edge Cases
 
 ### Required Dependencies
+
 - **FFmpeg must be installed** and accessible in PATH
 - **Font files** for timestamp rendering (DroidSans.ttf referenced)
 
 ### Critical Test Scenarios
+
 1. **Various video formats** (MP4, AVI, MKV) - FFmpeg compatibility
 2. **Edge timing** - Very short videos, frame extraction at boundaries
 3. **Content detection** - Blank frames, blurry content, retry logic
@@ -154,16 +174,19 @@ Performance comparison (44 thumbnails / 4 columns, 1080p video):
 | **mt.net v2 (FFmpeg.AutoGen)** | **Fast** | **11.07s** | **1.5x slower ✅** |
 
 ### Known Performance Considerations
+
 - **Fast seeking** (`--fast` option) now uses FFmpeg.AutoGen - performance within 1.5x of Go
 - **Large contact sheets** with many thumbnails can consume significant memory
 - **Filter chaining** applies sequentially - order matters for some filters
 
 ### Known Limitations
+
 - **Font Rendering** (ImageSharp composer only): When using `--composer imagesharp`, text rendering uses a different engine than freetype, resulting in slightly different text appearance. The default FFmpeg composer provides pixel-perfect text rendering matching the original Go implementation.
 
 ## Project-Specific Conventions
 
 ### Error Handling Pattern
+
 ```csharp
 try
 {
@@ -182,29 +205,35 @@ catch (Exception ex)
 ```
 
 ### Filter Implementation Pattern
+
 All filters in `FilterService` implement consistent interfaces and support chaining via comma-separated strings.
 
 ### Color Parsing Convention
+
 Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`.
 
 ## External Resource Guidelines
 
 ### When to Ask Before Sourcing
+
 - **Documentation/code not in temp/**: Ask user to source it first before looking externally
 - **FFmpeg.AutoGen examples**: Check `temp/FFmpeg.AutoGen/` before searching online
 - **API references**: Use temp/ directory content as primary source for current development
 
 ### When to Proceed Independently
+
 - **Standard .NET patterns**: Use established .NET conventions for common tasks
 - **ImageSharp operations**: Standard SixLabors.ImageSharp documentation is acceptable
 - **General C# best practices**: No need to ask for standard language features
 
 ## Reference Implementation
+
 The `reference/original-mt/` directory contains the complete Go implementation as a git submodule. When making changes that affect output compatibility, reference the Go implementation's behavior for consistency.
 
 ## Migration Status
 
 **✅ FFmpeg.AutoGen for Image Composition** - COMPLETED (v2.0 - Hybrid Approach)
+
 - **Status**: Fully implemented and set as default composer
 - **Implementation**: Hybrid approach combining FFmpeg.AutoGen and ImageSharp
   - **FFmpeg.AutoGen**: Frame resizing, text rendering (freetype), borders, image filters

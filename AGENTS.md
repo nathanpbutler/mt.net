@@ -299,6 +299,7 @@ dotnet run -- --help     # Show all options
 **Default (FFmpeg.AutoGen - Hybrid Approach)**: Uses FFmpeg for frame processing, ImageSharp for final composition:
 
 **Per-Frame Processing (FFmpeg.AutoGen):**
+
 - Load frames as `Image<Rgba32>` from video
 - Convert ImageSharp → AVFrame for FFmpeg processing
 - Process with FFmpeg filter graphs:
@@ -310,6 +311,7 @@ dotnet run -- --help     # Show all options
 - Convert AVFrame → ImageSharp for composition
 
 **Final Composition (ImageSharp):**
+
 - Create canvas with background color
 - Arrange processed frames in grid layout
 - Position header image

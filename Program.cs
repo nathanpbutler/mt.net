@@ -4,8 +4,22 @@ using Serilog;
 
 namespace nathanbutlerDEV.mt.net;
 
+/// <summary>
+/// Main program class.
+/// </summary>
+/// <remarks>
+/// This class contains the entry point for the application.
+/// </remarks>
 class Program
 {
+    /// <summary>
+    /// Main method - application entry point.
+    /// </summary>
+    /// <param name="args">Command-line arguments.</param>
+    /// <returns>Exit code.</returns>
+    /// <remarks>
+    /// This method initializes logging, builds configuration, and sets up command parsing.
+    /// </remarks>
     static int Main(string[] args)
     {
         // Initialize logging
@@ -27,11 +41,13 @@ class Program
         }
         catch (Exception ex)
         {
+            // Handle exceptions, log errors and return a non-zero exit code
             Log.Fatal(ex, "Application terminated unexpectedly");
             return 1;
         }
         finally
         {
+            // Ensure to flush and close the logger
             Log.CloseAndFlush();
         }
     }

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD033 -->
 # mt.net
 
 A .NET port of the Go-based media thumbnailing tool `mt` (media thumbnailer). This tool generates thumbnail contact sheets from video files using FFmpeg, with configurable screenshot count, layout, and styling options.
