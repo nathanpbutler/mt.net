@@ -86,7 +86,7 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
         // Setup conversion context for RGBA conversion
         _pSwsContext = ffmpeg.sws_getContext(
             Width, Height, PixelFormat,
-            Width, Height, AVPixelFormat.AV_PIX_FMT_RGBA,
+            Width, Height, AVPixelFormat.AV_PIX_FMT_RGB24,
             ffmpeg.SWS_BILINEAR, null, null, null);
 
         if (_pSwsContext == null)
@@ -94,8 +94,8 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
             throw new ApplicationException("Could not initialize the conversion context.");
         }
 
-        // Allocate buffer for RGBA frame
-        var bufferSize = ffmpeg.av_image_get_buffer_size(AVPixelFormat.AV_PIX_FMT_RGBA, Width, Height, 1);
+        // Allocate buffer for RGB frame
+        var bufferSize = ffmpeg.av_image_get_buffer_size(AVPixelFormat.AV_PIX_FMT_RGB24, Width, Height, 1);
         _convertedFrameBufferPtr = Marshal.AllocHGlobal(bufferSize);
         _dstData = new byte_ptr4();
         _dstLinesize = new int4();
@@ -104,7 +104,7 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
             ref _dstData,
             ref _dstLinesize,
             (byte*)_convertedFrameBufferPtr,
-            AVPixelFormat.AV_PIX_FMT_RGBA,
+            AVPixelFormat.AV_PIX_FMT_RGB24,
             Width,
             Height,
             1);
@@ -239,12 +239,11 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
 
                 for (int x = 0; x < Width; x++)
                 {
-                    var pixelPtr = rowPtr + (x * 4);
+                    var pixelPtr = rowPtr + (x * 3);
                     row[x] = new Rgba32(
                         pixelPtr[0],  // R
                         pixelPtr[1],  // G
-                        pixelPtr[2],  // B
-                        pixelPtr[3]   // A
+                        pixelPtr[2]  // B
                     );
                 }
             }

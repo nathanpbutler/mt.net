@@ -35,6 +35,13 @@ public static class FFmpegHelper
                 // Initialize dynamically loaded bindings
                 DynamicallyLoadedBindings.Initialize();
 
+                // Set log level to suppress informational warnings (like swscaler colorspace messages)
+                // while still showing actual errors
+                unsafe
+                {
+                    ffmpeg.av_log_set_level(ffmpeg.AV_LOG_ERROR);
+                }
+
                 _initialized = true;
 
                 // Log FFmpeg version

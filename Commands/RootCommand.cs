@@ -544,6 +544,8 @@ public static class RootCommandBuilder
         var timestamps = VideoProcessor.CalculateTimestamps(headerInfo.Duration, options);
         Console.WriteLine($"Will extract {timestamps.Count} frames");
 
+        var timestampsCountLength = timestamps.Count.ToString().Length;
+
         // Step 3: Extract frames with content detection
         Console.WriteLine("Extracting frames...");
         var frames = new List<(SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>, TimeSpan)>();
@@ -551,7 +553,9 @@ public static class RootCommandBuilder
         for (int i = 0; i < timestamps.Count; i++)
         {
             var timestamp = timestamps[i];
-            Console.Write($"\rExtracting frame {i + 1}/{timestamps.Count} at {timestamp:hh\\:mm\\:ss}...");
+            // Pad frame number depending on total count (01 if <100, 001 if <1000, etc.)
+            var paddedFrameNumber = (i + 1).ToString().PadLeft(timestampsCountLength, '0');
+            Console.Write($"\rExtracting frame {paddedFrameNumber}/{timestamps.Count} at {timestamp:hh\\:mm\\:ss}...");
 
             var frame = await VideoProcessor.ExtractFrameWithRetriesAsync(
                 videoPath,
