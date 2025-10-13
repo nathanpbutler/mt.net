@@ -200,7 +200,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         if (!options.DisableTimestamps)
         {
             var timestampText = FormatTimestamp(timestamp);
-            var fontFile = FindFontFile(options.FontPath ?? "Roboto-Regular");
+            var fontFile = FindFontFile(options.FontPath ?? "DroidSans");
             var fontSize = options.FontSize;
             var opacity = options.TimestampOpacity;
 
@@ -211,7 +211,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             if (fontFile != null)
             {
                 // Escape special characters in font path and text
-                var fontPath = fontFile.Replace("\\", "/").Replace(":", "\\\\:").Replace(" ", "\\ ");
+                var fontPath = fontFile.Replace("\\", "/").Replace(":", "\\\\:").Replace(" ", "\\ ").Replace("[", "\\[").Replace("]", "\\]").Replace(",", "\\,");
                 var escapedText = EscapeFilterText(timestampText);
 
                 // Use drawtext's built-in box feature for perfect alignment
@@ -488,7 +488,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <returns>Filter specification string.</returns>
     private static string BuildHeaderFilterSpec(List<string> lines, ThumbnailOptions options, Rgba32 fgColor)
     {
-        var fontFile = FindFontFile(options.FontPath ?? "Roboto-Regular");
+        var fontFile = FindFontFile(options.FontPath ?? "DroidSans");
         if (fontFile == null)
         {
             return ""; // No filter if no font found
@@ -505,7 +505,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         // Original Go: PointToFix32(fontSize+4) at 96 DPI
         var lineHeightPixels = (int)((baseFontSize + 4) * 96.0 / 72.0);
 
-        var fontPath = fontFile.Replace("\\", "/").Replace(":", "\\\\:").Replace(" ", "\\ ");
+        var fontPath = fontFile.Replace("\\", "/").Replace(":", "\\\\:").Replace(" ", "\\ ").Replace("[", "\\[").Replace("]", "\\]").Replace(",", "\\,");
 
         // Convert color to hex
         var colorHex = $"0x{fgColor.R:X2}{fgColor.G:X2}{fgColor.B:X2}";
@@ -818,7 +818,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         }
 
         // Try common font names as fallback
-        var fallbackFonts = new[] { "Roboto-Regular.ttf", "Arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf" };
+        var fallbackFonts = new[] { "DroidSans.ttf", "Roboto-Regular.ttf", "Arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf" };
         foreach (var dir in fontDirs)
         {
             if (!Directory.Exists(dir)) continue;

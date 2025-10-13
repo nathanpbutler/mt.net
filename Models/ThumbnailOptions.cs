@@ -10,7 +10,7 @@ public class ThumbnailOptions
     public int Padding { get; set; } = 10;
     public int Width { get; set; } = 400;
     public int Height { get; set; } = 0;
-    public string FontPath { get; set; } = "DroidSans.ttf";
+    public string FontPath { get; set; } = "DroidSans";
     public int FontSize { get; set; } = 12;
     public bool DisableTimestamps { get; set; } = false;
     public double TimestampOpacity { get; set; } = 1.0;
