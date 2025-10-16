@@ -1,36 +1,40 @@
 <!-- markdownlint-disable MD033 -->
 # mt.net
 
-A .NET port of the Go-based media thumbnailing tool [mt](https://github.com/mutschler/mt) (media thumbnailer). This tool generates thumbnail contact sheets from video files using FFmpeg, with configurable screenshot count, layout, and styling options.
+A .NET port of [mt](https://github.com/mutschler/mt) (media thumbnailer). Generate video thumbnail contact sheets using FFmpeg with configurable layout, filters, and metadata.
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"><img src="samples/rick.jpg" alt="Sample Contact Sheet" width="680"></a>
+  <br>
+  <em>Example contact sheet</em>
+</p>
 
 ## Features
 
-- **Video Thumbnail Generation**: Extract frames from video files and create contact sheets
-- **Flexible Layout**: Configurable number of screenshots, columns, and dimensions
-- **Rich Metadata**: Display file information in headers with timestamps
-- **Image Filters**: Apply various filters like greyscale, sepia, invert, and more
-- **Content Detection**: Skip blank or blurry frames automatically
-- **Multiple Output Formats**: Save contact sheets and individual thumbnails
-- **WebVTT Support**: Generate WebVTT files for HTML5 video players
-- **Dual Composer System**: FFmpeg.AutoGen (default) or ImageSharp for image composition
-- **Comprehensive CLI**: Feature-complete command-line interface with 40+ options
-
-## Example Output
-
-<p align="center">
-  <img src="samples/rick.jpg" alt="Sample Contact Sheet">
-  <br>
-  <em>Example contact sheet generated from a video file</em>
-</p>
+- Generate thumbnail contact sheets from video files
+- Configurable grid layout, dimensions, and styling
+- Image filters (greyscale, sepia, invert, fancy, cross, strip)
+- Skip blank or blurry frames automatically
+- WebVTT output for HTML5 video players
+- Individual thumbnail export
+- Dual composer system: FFmpeg.AutoGen (default) or ImageSharp (legacy)
 
 ## Installation
 
-### Prerequisites
+**Requirements:** .NET 9.0+ and FFmpeg
 
-- .NET 9.0 or later
-- FFmpeg (required for video processing)
+```bash
+# macOS
+brew install ffmpeg
 
-### Build from Source
+# Ubuntu/Debian
+sudo apt-get install ffmpeg
+
+# Windows
+# Download from https://www.gyan.dev/ffmpeg/builds and add to PATH
+```
+
+**Build:**
 
 ```bash
 git clone https://github.com/nathanpbutler/mt.net.git
@@ -38,151 +42,101 @@ cd mt.net
 dotnet build
 ```
 
-## Quick Start
-
-1. **Install FFmpeg** (required):
-
-   ```bash
-   # macOS
-   brew install ffmpeg
-
-   # Ubuntu/Debian
-   sudo apt-get install ffmpeg
-
-   # Windows: Download from https://www.gyan.dev/ffmpeg/builds and add to PATH
-   ```
-
-2. **Build the project**:
-
-   ```bash
-   dotnet build
-   ```
-
-3. **Generate your first contact sheet**:
-
-   ```bash
-   mt path/to/your/video.mp4
-   ```
-
 ## Usage
 
-### Basic Usage
-
-```powershell
-# Generate a 3x3 grid of thumbnails (default: 4 thumbnails, 2 columns)
+```bash
+# Basic usage (4 thumbnails, 2 columns)
 mt video.mp4
 
-# Custom layout with 9 thumbnails in 3 columns, 300px width
+# Custom layout
 mt video.mp4 --numcaps 9 --columns 3 --width 300
 
 # Apply filters and skip blank frames
 mt video.mp4 --filter greyscale,sepia --skip-blank --header-meta
 
-# Generate individual thumbnail images instead of contact sheet
+# Individual thumbnails
 mt video.mp4 --single-images
 
-# Create WebVTT file for HTML5 video players
+# WebVTT for HTML5 players
 mt video.mp4 --vtt
-
-# Show available filters
-mt --filters
-
-# Show all available options
-mt --help
 ```
 
-### Command Line Options
+### Key Options
 
-The tool provides comprehensive command-line options organized into several categories:
+**Layout:**
 
-#### Basic Options
+- `-n, --numcaps`: Number of screenshots (default: 4)
+- `-c, --columns`: Grid columns (default: 2)
+- `-w, --width`: Thumbnail width in pixels (default: 400)
+- `-h, --height`: Thumbnail height in pixels (default: 0 = auto)
+- `-p, --padding`: Padding between images (default: 10)
 
-- `-n, --numcaps`: Number of screenshots to generate (default: 4)
-- `-c, --columns`: Number of columns in the grid (default: 2)
-- `-w, --width`: Width of individual thumbnails in pixels (default: 400)
-- `-h, --height`: Height of individual thumbnails in pixels (default: 0 = auto)
-- `-p, --padding`: Padding between images in pixels (default: 10)
-- `-o, --output`: Output filename pattern (default: `{{.Path}}{{.Name}}.jpg`)
+**Time:**
 
-#### Time Options
+- `-i, --interval`: Time interval between captures (overrides numcaps)
+- `--from`: Start time (HH:MM:SS)
+- `--to, --end`: End time (HH:MM:SS)
+- `--skip-credits`: Skip last 2 minutes or 10% of video
 
-- `-i, --interval`: Time interval between captures in seconds (overrides numcaps)
-- `--from`: Start time for captures (HH:MM:SS, default: 00:00:00)
-- `--to, --end`: End time for captures (HH:MM:SS, default: 00:00:00)
-- `--skip-credits`: Skip end credits by cutting off last 2 minutes or 10%
+**Visual:**
 
-#### Visual Options
-
-- `--filter`: Apply image filters (greyscale, sepia, invert, fancy, cross, strip)
-- `--font, -f`: Font to use for timestamps and header (default: DroidSans)
+- `--filter`: Apply filters (greyscale, sepia, invert, fancy, cross, strip)
+- `-f, --font`: Font for timestamps and header (default: DroidSans)
 - `--font-size`: Font size in pixels (default: 12)
-- `--disable-timestamps, -d`: Disable timestamp overlay on images
-- `--timestamp-opacity`: Opacity of timestamp text 0.0-1.0 (default: 1.0)
+- `-d, --disable-timestamps`: Disable timestamp overlay
+- `--timestamp-opacity`: Timestamp text opacity 0.0-1.0 (default: 1.0)
 - `--header`: Include header with file information (default: true)
-- `--header-meta`: Include codec, FPS, and bitrate in header
+- `--header-meta`: Include codec, FPS, bitrate in header
 - `--header-image`: Image to display in header
-- `--bg-content`: Background color for content area (R,G,B, default: 0,0,0)
-- `--bg-header`: Background color for header (R,G,B, default: 0,0,0)
-- `--fg-header`: Text color for header (R,G,B, default: 255,255,255)
+- `--bg-content`, `--bg-header`, `--fg-header`: Colors (R,G,B)
 - `--border`: Border width around thumbnails (default: 0)
-- `--watermark`: Watermark image for center thumbnail
-- `--watermark-all`: Watermark image for all thumbnails
-- `--comment`: Comment to add to header (default: "contactsheet created with mt.net ([https://github.com/nathanpbutler/mt.net](https://github.com/nathanpbutler/mt.net))")
+- `--watermark`: Watermark for center thumbnail
+- `--watermark-all`: Watermark for all thumbnails
+- `--comment`: Custom comment for header
 
-#### Processing Options
+**Processing:**
 
-- `--skip-blank, -b`: Skip blank frames (up to 3 retries)
-- `--skip-blurry`: Skip blurry frames (up to 3 retries)
-- `--fast`: Use fast but less accurate seeking
-- `--sfw`: Use content filtering for safe-for-work output (experimental)
-- `--blur-threshold`: Threshold for blur detection 0-100 (default: 62)
-- `--blank-threshold`: Threshold for blank frame detection 0-100 (default: 85)
+- `-b, --skip-blank`: Skip blank frames (3 retries)
+- `--skip-blurry`: Skip blurry frames (3 retries)
+- `--fast`: Fast but less accurate seeking
+- `--sfw`: Content filtering for safe-for-work output (experimental)
+- `--blur-threshold`: Blur detection threshold 0-100 (default: 62)
+- `--blank-threshold`: Blank detection threshold 0-100 (default: 85)
 
-#### Output Options
+**Output:**
 
-- `--single-images, -s`: Save individual images instead of contact sheet
-- `--overwrite`: Overwrite existing files (default behavior: increment filename with -01, -02, etc.)
+- `-o, --output`: Output filename pattern
+- `-s, --single-images`: Save individual images
+- `--overwrite`: Overwrite existing files (default: auto-increment with -01, -02, etc.)
 - `--skip-existing`: Skip processing if output already exists
-- `--vtt`: Generate WebVTT file for HTML5 video players
-- `--webvtt`: Generate WebVTT with disabled headers, padding, and timestamps
+- `--vtt`: Generate WebVTT file
+- `--webvtt`: WebVTT mode (disables headers, padding, timestamps)
 
-**Note**: When an output file already exists and `--overwrite` is not set, the tool will automatically increment the filename (e.g., `output.jpg` → `output-01.jpg` → `output-02.jpg`). This matches the behavior of the original Go implementation.
-
-#### Upload Options
-
-- `--upload`: Upload generated files via HTTP (**placeholder only - not implemented**)
-- `--upload-url`: URL for file upload (default: <http://example.com/upload>) (**placeholder only - not implemented**)
-
-#### Configuration Options
+**Configuration:**
 
 - `--config`: Configuration file path
-- `--save-config`: Save current settings to configuration file (**placeholder only - not implemented**)
-- `--config-file`: Use specific configuration file (**placeholder only - not implemented**)
-- `--show-config`: Show configuration file path and values, then exit (**placeholder only - not implemented**)
+- `--save-config`: Save settings to config file (placeholder only)
+- `--config-file`: Use specific config file (placeholder only)
+- `--show-config`: Show config path and values (placeholder only)
 
-#### Global Options
+**Upload (not implemented):**
 
-- `--composer`: Choose image composer: `ffmpeg` (default) or `imagesharp`
-- `--verbose, -v`: Enable verbose logging
+- `--upload`: Upload generated files via HTTP (placeholder only)
+- `--upload-url`: URL for file upload (placeholder only)
+
+**Global:**
+
+- `--composer`: Image composer: `ffmpeg` (default) or `imagesharp`
+- `-v, --verbose`: Verbose logging
 - `--filters`: List all available image filters
-- `-?, --help, /h`: Show help and usage information
+- `--help`: Show all options
 - `--version`: Show version information
-
-For a complete list of options, run:
-
-```powershell
-mt --help
-```
 
 ## Configuration
 
-The application supports configuration through:
+Supports JSON config files, environment variables (prefix `MT_`), and CLI arguments.
 
-1. **JSON Configuration Files**: Store settings in JSON format
-2. **Environment Variables**: Use `MT_` prefix for environment variables
-3. **Command Line Arguments**: Override any configuration option
-
-### Example Configuration
+**Example config.json:**
 
 ```json
 {
@@ -195,185 +149,79 @@ The application supports configuration through:
 }
 ```
 
-## Development Status
+## Implementation Status
 
-### ✅ Completed Features
+**Complete:**
 
-- **Project Structure**: Organized codebase with proper separation of concerns
-- **Dependencies**: All required NuGet packages integrated
-- **Command-Line Interface**: 100% feature parity with original Go implementation (40+ options)
-  - ✅ **Bug Fix (Oct 2025)**: Resolved `-c` alias conflict (now only `--columns` uses `-c`)
-- **Configuration System**: JSON config support with environment variables and CLI overrides
-- **Video Processing**: ✅ **Migrated to FFmpeg.AutoGen** for direct libavcodec control and frame-level seeking
-- **Image Composition**: Dual composer implementations available via `--composer` option
-  - ✅ **FFmpeg.AutoGen Composer** (default, hybrid): Uses FFmpeg filter graphs for per-frame processing (resize, text with freetype, borders, filters), ImageSharp for grid layout
-  - ✅ **ImageSharp Composer** (legacy): Pure ImageSharp implementation
-  - ✅ **Pixel-Perfect Text**: FFmpeg composer uses freetype for exact visual match to original Go mt
-  - ✅ **Header Format**: Matches mt's multi-line structure with labels (File Name, File Size, Duration, Resolution)
-  - ✅ **Dynamic Header Height**: Automatically adjusts to fit content with or without metadata
-  - ✅ **Binary Units**: File sizes display in GiB/MiB (matching mt)
-  - ✅ **Timestamp Format**: Always shows HH:MM:SS format (matching mt)
-- **Image Filtering**: All filter types implemented (greyscale, sepia, invert, fancy, cross, strip)
-- **Content Detection**: Blank and blur frame detection with configurable thresholds
-- **Output Management**: File handling, WebVTT generation, and multiple output formats
-  - ✅ **WebVTT Generation**: Full feature parity with original Go implementation
-    - `--vtt`: Generate WebVTT files with correct coordinate mapping (xywh format)
-    - `--webvtt`: Shorthand that auto-disables headers, padding, and timestamps for optimal HTML5 video player compatibility
-    - **Dual Timestamp System**: Frame extraction timestamps (avoid video end) vs. VTT display timestamps (even spacing across full duration)
-    - **Accurate Coordinates**: Proper calculation including header height and padding offsets
-    - **Time Range Coverage**: VTT cues span from 00:00:00 to video duration with evenly-spaced intervals
-- **Processing Pipeline**: Fully integrated async workflow with progress reporting
-- **Testing**: Verified with real video files, layout working correctly
+- Full feature parity with original Go implementation (40+ CLI options)
+- FFmpeg.AutoGen video decoder with direct libavcodec control
+- Hybrid composer (FFmpeg filter graphs for rendering + ImageSharp for layout)
+- Pixel-perfect text rendering with freetype (matches original)
+- WebVTT generation with accurate coordinate mapping
+- Image filters, content detection, metadata headers
+- Configuration system (JSON, env vars, CLI)
 
-### 🎯 Performance Benchmarks
+**Not Implemented:**
 
-Performance comparison against the original Go implementation (44 thumbnails / 4 columns, 1080p video):
+- HTTP upload (`--upload`, `--upload-url`) - CLI placeholders only
+- Config persistence (`--save-config`, `--show-config`) - CLI placeholders only
+- Serilog integration - dependency included but not fully configured
 
-| Version | Mode | Time (seconds) | Speed vs Go |
-|----------------|----------------|--------------|-------------|
-| Go (original mt) | Normal | 10.44s | Baseline |
-| Go (original mt) | Fast | 7.52s | 28% faster |
-| mt.net v1 (FFMpegCore) | Normal | 58.53s | 5.6x slower ❌ |
-| mt.net v1 (FFMpegCore) | Fast | 58.99s | 7.8x slower ❌ |
-| **mt.net v2 (FFmpeg.AutoGen)** | **Normal** | **14.53s** | **1.4x slower ✅** |
-| **mt.net v2 (FFmpeg.AutoGen)** | **Fast** | **11.07s** | **1.5x slower ✅** |
+**Known Issues:**
 
-**Key Takeaway**: The FFmpeg.AutoGen migration achieved **4x performance improvement** over FFMpegCore, bringing mt.net to within ~40-50% of the original Go implementation's speed.
+- `--filters` flag requires dummy file argument due to System.CommandLine validation
+- ImageSharp composer has different text rendering than freetype (use default FFmpeg composer)
 
-### 🚧 Not Implemented (Placeholders Only)
+## Architecture
 
-- **Upload Functionality**: HTTP upload feature (--upload, --upload-url) - placeholders present in CLI but no implementation or timeline
-- **Configuration Persistence**: --save-config, --config-file, --show-config - placeholders present in CLI but no implementation or timeline
-- **Enhanced Logging**: Serilog is included but not fully integrated for structured logging
+```plaintext
+mt.net/
+├── Program.cs                      # Entry point
+├── Commands/
+│   └── RootCommand.cs              # CLI definitions
+├── Configuration/
+│   ├── AppConfig.cs                # Config model
+│   └── ConfigurationBuilder.cs     # Config loading
+├── Models/
+│   ├── ThumbnailOptions.cs         # Generation options
+│   ├── HeaderInfo.cs               # Metadata
+│   └── ImageFilter.cs              # Filter definitions
+├── Services/
+│   ├── VideoProcessor.cs           # Metadata extraction
+│   ├── FFmpegAutoGenVideoDecoder.cs # Frame extraction
+│   ├── FFmpegFilterGraphComposer.cs # Default composer
+│   ├── ImageComposer.cs            # Legacy composer
+│   ├── FFmpegFilterService.cs      # FFmpeg filters
+│   ├── ContentDetectionService.cs  # Blank/blur detection
+│   └── OutputService.cs            # File/WebVTT output
+└── Utilities/
+    ├── ColorParser.cs              # RGB parsing
+    ├── TimeSpanParser.cs           # Time parsing
+    └── FFmpegHelper.cs             # FFmpeg helpers
+```
 
-### ⚠️ Known Limitations
-
-- **Font Rendering** (ImageSharp composer only): When using `--composer imagesharp`, text rendering uses a different engine than freetype (used by FFmpeg/Go), resulting in slightly different text appearance. The default FFmpeg composer provides pixel-perfect text rendering matching the original Go implementation.
-- **--filters Flag**: The `--filters` option to list available filters currently requires a dummy file argument due to System.CommandLine argument validation. Example workaround: Use `--help` to see available options, or provide any path with the flag.
-
-### ⚠️ Prerequisites
-
-**FFmpeg Required**: This tool requires FFmpeg to be installed and available in your system PATH. Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-
-## Dependencies
-
-- **System.CommandLine**: Command-line interface parsing
-- **FFmpeg.AutoGen**: Direct FFmpeg bindings for video processing, frame extraction, and image composition (default)
-- **SixLabors.ImageSharp**: Image manipulation and legacy composer implementation
-- **SixLabors.ImageSharp.Drawing**: Drawing operations for legacy composer
-- **SixLabors.Fonts**: Text rendering for legacy composer
-- **Microsoft.Extensions.Configuration**: Configuration management
-- **Serilog**: Structured logging (planned)
-
-## Contributing
-
-This project is a .NET port of the original Go implementation. The original source code is available in the `reference/original-mt/` directory for reference during development.
-
-### Development Commands
+## Development
 
 ```bash
-# Build the project
+# Build
 dotnet build
 
-# Run the application
-dotnet run
+# Run
+dotnet run -- video.mp4
 
-# Build for release
+# Release build
 dotnet build --configuration Release
 
-# Run tests
+# Tests
 dotnet test
 ```
 
-### Project Structure
-
-```text
-mt.net/
-├── Program.cs                      # Application entry point
-├── Commands/
-│   └── RootCommand.cs              # CLI command definitions and argument parsing
-├── Configuration/
-│   ├── AppConfig.cs                # Application configuration model
-│   └── ConfigurationBuilder.cs     # Configuration file and environment variable support
-├── Models/
-│   ├── ThumbnailOptions.cs         # Thumbnail generation options
-│   ├── HeaderInfo.cs               # Contact sheet header metadata
-│   └── ImageFilter.cs              # Image filter definitions
-├── Services/
-│   ├── VideoProcessor.cs           # Video metadata extraction and processing
-│   ├── FFmpegAutoGenVideoDecoder.cs # FFmpeg.AutoGen frame extraction
-│   ├── ImageComposer.cs            # Legacy ImageSharp contact sheet composer
-│   ├── FFmpegFilterGraphComposer.cs # Default FFmpeg filter graph composer
-│   ├── FilterService.cs            # Legacy ImageSharp filter implementations
-│   ├── FFmpegFilterService.cs      # FFmpeg-based filter implementations
-│   ├── ContentDetectionService.cs  # Blank and blur frame detection
-│   └── OutputService.cs            # File saving and WebVTT generation
-├── Utilities/
-│   ├── ColorParser.cs              # RGB color string parsing
-│   ├── TimeSpanParser.cs           # Time string parsing (HH:MM:SS)
-│   ├── FileValidator.cs            # File path validation
-│   └── FFmpegHelper.cs             # FFmpeg.AutoGen helper functions
-├── reference/
-│   └── original-mt/                # Original Go implementation source code
-└── samples/
-    └── rick.jpg                    # Example contact sheet output
-```
-
-## How It Works
-
-1. **Video Analysis**: Extracts video metadata (resolution, duration, codec, fps, bitrate)
-2. **Timestamp Calculation**: Determines optimal frame positions based on video duration and options
-3. **Frame Extraction**: Uses FFmpeg to capture frames at calculated timestamps
-4. **Content Detection**: Optionally skips blank or blurry frames (with retry logic)
-5. **Filter Application**: Applies visual effects (greyscale, sepia, fancy rotation, etc.)
-6. **Contact Sheet Creation**: Arranges thumbnails in a grid with customizable layout
-7. **Header Generation**: Adds metadata header with file information
-8. **Timestamp Overlay**: Adds time codes to each thumbnail
-9. **Output**: Saves final contact sheet and optionally generates WebVTT file
+The original Go source is in `reference/original-mt/` for reference.
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
-
-## Future Roadmap
-
-### High Priority
-
-1. ✅ **FFmpeg.AutoGen Migration** - COMPLETED
-   - Migrated from FFMpegCore to FFmpeg.AutoGen for better performance
-   - Achieved 4x performance improvement
-   - Implemented true fast seeking behavior with direct libavcodec control
-   - ✅ **FFmpeg.AutoGen Composer** - COMPLETED (default as of v2.0, hybrid approach)
-     - Pixel-perfect text rendering with freetype matching original Go implementation
-     - Uses FFmpeg filter graphs (scale, drawtext, drawbox) for per-frame processing
-     - Uses ImageSharp for grid layout composition (simple, maintainable)
-     - Available via `--composer ffmpeg` (default) or legacy `--composer imagesharp`
-     - Best of both worlds: exact rendering + clean code architecture
-
-### Medium Priority
-
-1. **Upload Service** - Implement HTTP upload functionality for generated contact sheets
-2. **Configuration Management** - Implement save/load configuration file features
-3. **Enhanced Logging** - Integrate Serilog for structured, configurable logging
-4. **Performance Optimization** - Further optimize to close the remaining ~40% performance gap with Go
-
-### Low Priority
-
-1. **Unit Testing** - Add comprehensive test coverage
-2. **Documentation** - Expand usage examples and troubleshooting guides
-3. **Code Cleanup** - Remove legacy ImageSharp composer after migration period (keeping as fallback temporarily)
-
-### Future Considerations
-
-1. ✅ **FFmpeg.AutoGen for Image Composition** - COMPLETED (v2.0 - Hybrid Approach)
-   - Successfully migrated critical operations to FFmpeg's filter graphs
-   - **FFmpeg.AutoGen handles**: Frame resizing, text rendering (freetype), borders, image filters
-   - **ImageSharp handles**: Grid layout, canvas creation, watermarks (simpler in C#)
-   - Achieves pixel-perfect text rendering matching mt (uses freetype)
-   - Available as default composer, with ImageSharp as legacy fallback
-   - Hybrid approach is intentional and optimal - full FFmpeg migration possible but not necessary
-   - Legacy ImageSharp composer will be removed after migration period
+GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-This project is based on the original [mt](https://github.com/mutschler/mt) tool written in Go. Thanks to the original developer for creating such a useful media processing utility.
+Based on the original [mt](https://github.com/mutschler/mt) tool by mutschler.

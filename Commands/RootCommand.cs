@@ -67,30 +67,12 @@ public static class RootCommandBuilder
             DefaultValueFactory = _ => 10
         };
 
-        var outputOption = new Option<string>("--output", ["-o"])
-        {
-            Description = "Output filename pattern",
-            DefaultValueFactory = _ => "{{.Path}}{{.Name}}.jpg"
-        };
-
-        outputOption.CompletionSources.Add(ctx =>
-        {
-            var file = ctx.ParseResult.GetValue(fileArgument); // Interesting...
-            if (file != null)
-            {
-                var directory = file.DirectoryName ?? ".";
-                return [new CompletionItem(Path.Combine(directory, $"{Path.GetFileNameWithoutExtension(file.Name)}.jpg"))];
-            }
-            return [];
-        });
-
         // Time Options
-        var intervalOption = new Option<int>("--interval")
+        var intervalOption = new Option<int>("--interval", ["-i"])
         {
             Description = "Interval between captures in seconds (overrides numcaps)",
             DefaultValueFactory = _ => 0
         };
-        intervalOption.Aliases.Add("-i");
 
         var fromOption = new Option<string>("--from")
         {
@@ -98,12 +80,11 @@ public static class RootCommandBuilder
             DefaultValueFactory = _ => "00:00:00"
         };
 
-        var toOption = new Option<string>("--to")
+        var toOption = new Option<string>("--to", ["--end"])
         {
             Description = "End time for captures (HH:MM:SS)",
             DefaultValueFactory = _ => "00:00:00"
         };
-        toOption.Aliases.Add("--end");
 
         var skipCreditsOption = new Option<bool>("--skip-credits")
         {
@@ -117,12 +98,11 @@ public static class RootCommandBuilder
             DefaultValueFactory = _ => "none"
         };
 
-        var fontOption = new Option<string>("--font")
+        var fontOption = new Option<string>("--font", ["-f"])
         {
             Description = "Font to use for timestamps and header",
             DefaultValueFactory = _ => "DroidSans"
         };
-        fontOption.Aliases.Add("-f");
 
         var fontSizeOption = new Option<int>("--font-size")
         {
@@ -130,11 +110,10 @@ public static class RootCommandBuilder
             DefaultValueFactory = _ => 12
         };
 
-        var disableTimestampsOption = new Option<bool>("--disable-timestamps")
+        var disableTimestampsOption = new Option<bool>("--disable-timestamps", ["-d"])
         {
             Description = "Disable timestamp overlay on images"
         };
-        disableTimestampsOption.Aliases.Add("-d");
 
         var timestampOpacityOption = new Option<double>("--timestamp-opacity")
         {
@@ -157,8 +136,7 @@ public static class RootCommandBuilder
         {
             Description = "Image to display in header"
         };
-
-        // Color options
+        
         var bgContentOption = new Option<string>("--bg-content")
         {
             Description = "Background color for content area (R,G,B)",
@@ -201,11 +179,10 @@ public static class RootCommandBuilder
         };
 
         // Processing Options
-        var skipBlankOption = new Option<bool>("--skip-blank")
+        var skipBlankOption = new Option<bool>("--skip-blank", ["-b"])
         {
             Description = "Skip blank frames (up to 3 retries)"
         };
-        skipBlankOption.Aliases.Add("-b");
 
         var skipBlurryOption = new Option<bool>("--skip-blurry")
         {
@@ -234,12 +211,28 @@ public static class RootCommandBuilder
             DefaultValueFactory = _ => 85
         };
 
+        var outputOption = new Option<string>("--output", ["-o"])
+        {
+            Description = "Output filename pattern",
+            DefaultValueFactory = _ => "{{.Path}}{{.Name}}.jpg"
+        };
+
+        outputOption.CompletionSources.Add(ctx =>
+        {
+            var file = ctx.ParseResult.GetValue(fileArgument); // Interesting...
+            if (file != null)
+            {
+                var directory = file.DirectoryName ?? ".";
+                return [new CompletionItem(Path.Combine(directory, $"{Path.GetFileNameWithoutExtension(file.Name)}.jpg"))];
+            }
+            return [];
+        });
+
         // Output Options
-        var singleImagesOption = new Option<bool>("--single-images")
+        var singleImagesOption = new Option<bool>("--single-images", ["-s"])
         {
             Description = "Save individual images instead of contact sheet"
         };
-        singleImagesOption.Aliases.Add("-s");
 
         var overwriteOption = new Option<bool>("--overwrite")
         {
@@ -261,18 +254,6 @@ public static class RootCommandBuilder
             Description = "Generate WebVTT with disabled headers, padding, and timestamps"
         };
 
-        // Upload Options
-        var uploadOption = new Option<bool>("--upload")
-        {
-            Description = "Upload generated files via HTTP"
-        };
-
-        var uploadUrlOption = new Option<string>("--upload-url")
-        {
-            Description = "URL for file upload",
-            DefaultValueFactory = _ => "http://example.com/upload"
-        };
-
         // Configuration Options
         var configOption = new Option<FileInfo>("--config")
         {
@@ -292,6 +273,18 @@ public static class RootCommandBuilder
         var showConfigOption = new Option<bool>("--show-config")
         {
             Description = "Show configuration file path and values, then exit"
+        };
+
+        // Upload Options
+        var uploadOption = new Option<bool>("--upload")
+        {
+            Description = "Upload generated files via HTTP"
+        };
+
+        var uploadUrlOption = new Option<string>("--upload-url")
+        {
+            Description = "URL for file upload",
+            DefaultValueFactory = _ => "http://example.com/upload"
         };
 
         // Global Options
@@ -326,7 +319,6 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(widthOption);
         rootCommand.Options.Add(heightOption);
         rootCommand.Options.Add(paddingOption);
-        rootCommand.Options.Add(outputOption);
 
         // Time Options
         rootCommand.Options.Add(intervalOption);
@@ -360,21 +352,22 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(blankThresholdOption);
 
         // Output Options
+        rootCommand.Options.Add(outputOption);
         rootCommand.Options.Add(singleImagesOption);
         rootCommand.Options.Add(overwriteOption);
         rootCommand.Options.Add(skipExistingOption);
         rootCommand.Options.Add(vttOption);
         rootCommand.Options.Add(webVttOption);
 
-        // Upload Options
-        rootCommand.Options.Add(uploadOption);
-        rootCommand.Options.Add(uploadUrlOption);
-
         // Configuration Options
         rootCommand.Options.Add(configOption);
         rootCommand.Options.Add(saveConfigOption);
         rootCommand.Options.Add(configFileOption);
         rootCommand.Options.Add(showConfigOption);
+
+        // Upload Options
+        rootCommand.Options.Add(uploadOption);
+        rootCommand.Options.Add(uploadUrlOption);
 
         // Global Options
         rootCommand.Options.Add(composerOption);
@@ -409,7 +402,6 @@ public static class RootCommandBuilder
                 Width = parseResult.GetValue(widthOption),
                 Height = parseResult.GetValue(heightOption),
                 Padding = parseResult.GetValue(paddingOption),
-                Filename = parseResult.GetValue(outputOption)!,
 
                 // Time Options
                 Interval = parseResult.GetValue(intervalOption),
@@ -443,6 +435,7 @@ public static class RootCommandBuilder
                 BlankThreshold = parseResult.GetValue(blankThresholdOption),
 
                 // Output Options
+                Filename = parseResult.GetValue(outputOption)!,
                 SingleImages = parseResult.GetValue(singleImagesOption),
                 Overwrite = parseResult.GetValue(overwriteOption),
                 SkipExisting = parseResult.GetValue(skipExistingOption),
