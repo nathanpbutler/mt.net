@@ -82,6 +82,52 @@ numCapsOption.Aliases.Add("-n");
 
 Output paths use Go-template style patterns (`{{.Path}}{{.Name}}.jpg`) processed in `OutputService.BuildOutputPath()`.
 
+### WebVTT Implementation Pattern
+
+WebVTT generation achieves full feature parity with the Go implementation through a dual timestamp approach:
+
+**Frame Extraction Timestamps** (VideoProcessor.cs:176-178):
+
+```csharp
+// Use (numCaps + 1) to ensure frames are extractable (not at exact video end)
+var step = workingDuration.TotalSeconds / (numCaps + 1);
+```
+
+- Spacing: `workingDuration / (numCaps + 1)` ensures last frame is before video end
+- Purpose: FFmpeg cannot extract frames at exact video end
+- Example (40:20 video, 4 caps): Extracts at 8:04, 16:08, 24:12, 32:16
+
+**VTT Display Timestamps** (RootCommand.cs:658-666):
+
+```csharp
+// Build VTT timestamps with evenly-spaced intervals spanning full video
+var vttTimestamps = new List<TimeSpan> { TimeSpan.Zero };
+var vttStep = headerInfo.Duration.TotalSeconds / frames.Count;
+for (int i = 1; i <= frames.Count; i++)
+{
+    vttTimestamps.Add(TimeSpan.FromSeconds(vttStep * i));
+}
+```
+
+- Spacing: `videoDuration / frames.Count` for even coverage
+- Purpose: Display time ranges for seeking in HTML5 video players
+- Example (40:20 video, 4 caps): 00:00:00, 10:05, 20:10, 30:15, 40:20
+
+**--webvtt Option Override** (RootCommand.cs:487-495):
+
+```csharp
+if (options.WebVtt)
+{
+    options.Vtt = true;                    // Enable VTT generation
+    options.Header = false;                 // Disable header
+    options.HeaderMeta = false;            // Disable header meta
+    options.DisableTimestamps = true;      // Disable timestamps
+    options.Padding = 0;                   // No padding
+}
+```
+
+**Key Insight**: Frame extraction and VTT timestamps serve different purposes and must be calculated differently for correct behavior.
+
 ## Critical Dependencies & Integration Points
 
 ### FFmpeg Integration (✅ Migration Complete)

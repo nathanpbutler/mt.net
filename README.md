@@ -12,8 +12,8 @@ A .NET port of the Go-based media thumbnailing tool `mt` (media thumbnailer). Th
 - **Content Detection**: Skip blank or blurry frames automatically
 - **Multiple Output Formats**: Save contact sheets and individual thumbnails
 - **WebVTT Support**: Generate WebVTT files for HTML5 video players
-- **Upload Functionality**: HTTP upload capabilities for generated images
-- **Comprehensive CLI**: Feature-complete command-line interface
+- **Dual Composer System**: FFmpeg.AutoGen (default) or ImageSharp for image composition
+- **Comprehensive CLI**: Feature-complete command-line interface with 40+ options
 
 ## Example Output
 
@@ -114,7 +114,7 @@ The tool provides comprehensive command-line options organized into several cate
 #### Visual Options
 
 - `--filter`: Apply image filters (greyscale, sepia, invert, fancy, cross, strip)
-- `--font, -f`: Font to use for timestamps and header (default: DroidSans.ttf)
+- `--font, -f`: Font to use for timestamps and header (default: DroidSans)
 - `--font-size`: Font size in pixels (default: 12)
 - `--disable-timestamps, -d`: Disable timestamp overlay on images
 - `--timestamp-opacity`: Opacity of timestamp text 0.0-1.0 (default: 1.0)
@@ -148,15 +148,15 @@ The tool provides comprehensive command-line options organized into several cate
 
 #### Upload Options
 
-- `--upload`: Upload generated files via HTTP (not yet implemented)
-- `--upload-url`: URL for file upload (default: [http://example.com/upload](https://www.youtube.com/watch?v=dQw4w9WgXcQ))
+- `--upload`: Upload generated files via HTTP (**placeholder only - not implemented**)
+- `--upload-url`: URL for file upload (default: <http://example.com/upload>) (**placeholder only - not implemented**)
 
 #### Configuration Options
 
 - `--config`: Configuration file path
-- `--save-config`: Save current settings to configuration file (not yet implemented)
-- `--config-file`: Use specific configuration file (not yet implemented)
-- `--show-config`: Show configuration file path and values, then exit (not yet implemented)
+- `--save-config`: Save current settings to configuration file (**placeholder only - not implemented**)
+- `--config-file`: Use specific configuration file (**placeholder only - not implemented**)
+- `--show-config`: Show configuration file path and values, then exit (**placeholder only - not implemented**)
 
 #### Global Options
 
@@ -213,6 +213,12 @@ The application supports configuration through:
 - **Image Filtering**: All filter types implemented (greyscale, sepia, invert, fancy, cross, strip)
 - **Content Detection**: Blank and blur frame detection with configurable thresholds
 - **Output Management**: File handling, WebVTT generation, and multiple output formats
+  - ✅ **WebVTT Generation**: Full feature parity with original Go implementation
+    - `--vtt`: Generate WebVTT files with correct coordinate mapping (xywh format)
+    - `--webvtt`: Shorthand that auto-disables headers, padding, and timestamps for optimal HTML5 video player compatibility
+    - **Dual Timestamp System**: Frame extraction timestamps (avoid video end) vs. VTT display timestamps (even spacing across full duration)
+    - **Accurate Coordinates**: Proper calculation including header height and padding offsets
+    - **Time Range Coverage**: VTT cues span from 00:00:00 to video duration with evenly-spaced intervals
 - **Processing Pipeline**: Fully integrated async workflow with progress reporting
 - **Testing**: Verified with real video files, layout working correctly
 
@@ -231,15 +237,16 @@ Performance comparison against the original Go implementation (44 thumbnails / 4
 
 **Key Takeaway**: The FFmpeg.AutoGen migration achieved **4x performance improvement** over FFMpegCore, bringing mt.net to within ~40-50% of the original Go implementation's speed.
 
-### 🚧 In Development / Not Yet Implemented
+### 🚧 Not Implemented (Placeholders Only)
 
-- **Upload Functionality**: HTTP upload feature (placeholder only)
-- **Configuration Persistence**: --save-config, --config-file, --show-config (placeholders only)
-- **Enhanced Logging**: Serilog integration for structured logging
+- **Upload Functionality**: HTTP upload feature (--upload, --upload-url) - placeholders present in CLI but no implementation or timeline
+- **Configuration Persistence**: --save-config, --config-file, --show-config - placeholders present in CLI but no implementation or timeline
+- **Enhanced Logging**: Serilog is included but not fully integrated for structured logging
 
 ### ⚠️ Known Limitations
 
 - **Font Rendering** (ImageSharp composer only): When using `--composer imagesharp`, text rendering uses a different engine than freetype (used by FFmpeg/Go), resulting in slightly different text appearance. The default FFmpeg composer provides pixel-perfect text rendering matching the original Go implementation.
+- **--filters Flag**: The `--filters` option to list available filters currently requires a dummy file argument due to System.CommandLine argument validation. Example workaround: Use `--help` to see available options, or provide any path with the flag.
 
 ### ⚠️ Prerequisites
 

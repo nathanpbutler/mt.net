@@ -150,7 +150,7 @@ public static class RootCommandBuilder
         var fontOption = new Option<string>("--font")
         {
             Description = "Font to use for timestamps and header",
-            DefaultValueFactory = _ => "Roboto-Regular.ttf"
+            DefaultValueFactory = _ => "DroidSans"
         };
         fontOption.Aliases.Add("-f");
 
@@ -484,6 +484,16 @@ public static class RootCommandBuilder
                 Comment = parseResult.GetValue(commentOption)!
             };
 
+            // Handle WebVTT special mode (mimics Go behavior at mt.go:441-447)
+            if (options.WebVtt)
+            {
+                options.Vtt = true;                    // Enable VTT generation
+                options.Header = false;                 // Disable header
+                options.HeaderMeta = false;            // Disable header meta
+                options.DisableTimestamps = true;      // Disable timestamps
+                options.Padding = 0;                   // No padding
+            }
+
             // Handle save config
             var saveConfigPath = parseResult.GetValue(saveConfigOption);
             if (!string.IsNullOrEmpty(saveConfigPath))
@@ -644,7 +654,18 @@ public static class RootCommandBuilder
                 if (options.Vtt || options.WebVtt)
                 {
                     Console.WriteLine("Generating WebVTT file...");
-                    await OutputService.GenerateWebVttAsync(frames, outputPath, videoPath, options);
+
+                    // Build VTT timestamps array with evenly-spaced intervals spanning full video
+                    // Unlike frame extraction timestamps (which use numCaps+1 to avoid the exact end),
+                    // VTT timestamps should span from 00:00:00 to video duration (matching Go mt.go:396)
+                    var vttTimestamps = new List<TimeSpan> { TimeSpan.Zero };
+                    var vttStep = headerInfo.Duration.TotalSeconds / frames.Count;
+                    for (int i = 1; i <= frames.Count; i++)
+                    {
+                        vttTimestamps.Add(TimeSpan.FromSeconds(vttStep * i));
+                    }
+
+                    await OutputService.GenerateWebVttAsync(frames, outputPath, videoPath, options, vttTimestamps);
                 }
             }
         }

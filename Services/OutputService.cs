@@ -111,7 +111,8 @@ public class OutputService
         List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
         string imagePath,
         string videoPath,
-        ThumbnailOptions options)
+        ThumbnailOptions options,
+        List<TimeSpan> vttTimestamps)
     {
         var vttPath = Path.ChangeExtension(BuildOutputPath(videoPath, options.Filename), ".vtt");
 
@@ -126,20 +127,31 @@ public class OutputService
 
         var columns = options.Columns;
 
+        // Calculate header height for Y-offset (matching Go implementation at mt.go:396)
+        var headerHeight = 0;
+        if (options.Header && !options.WebVtt)
+        {
+            // Header height calculation matches ImageComposer logic
+            var numLines = 4; // Base: File Name, Size, Duration, Resolution
+            if (options.HeaderMeta) numLines += 2; // +Codec/FPS lines
+            if (!string.IsNullOrEmpty(options.Comment)) numLines += 1;
+            headerHeight = (5 + (options.FontSize + 4) * numLines) + 10;
+        }
+
+        // Use calculated timestamps array (matching Go implementation at mt.go:396)
+        // vttTimestamps = [00:00:00, timestamp1, timestamp2, ..., videoDuration]
         for (int i = 0; i < frames.Count; i++)
         {
-            var timestamp = frames[i].Timestamp;
-            var nextTimestamp = i < frames.Count - 1
-                ? frames[i + 1].Timestamp
-                : timestamp + TimeSpan.FromSeconds(5);
-
             var row = i / columns;
             var col = i % columns;
 
-            var x = col * thumbnailWidth;
-            var y = row * thumbnailHeight;
+            // Calculate positions WITH padding (matching Go implementation at mt.go:380-388)
+            var padding = options.Padding;
+            var x = (col * thumbnailWidth) + (padding * col) + padding;
+            var y = (row * thumbnailHeight) + (padding * row) + padding + headerHeight;
 
-            vtt.AppendLine($"{FormatVttTimestamp(timestamp)} --> {FormatVttTimestamp(nextTimestamp)}");
+            // Use calculated timestamps: timestamps[i] --> timestamps[i+1]
+            vtt.AppendLine($"{FormatVttTimestamp(vttTimestamps[i])} --> {FormatVttTimestamp(vttTimestamps[i + 1])}");
             vtt.AppendLine($"{Path.GetFileName(imagePath)}#xywh={x},{y},{thumbnailWidth},{thumbnailHeight}");
             vtt.AppendLine();
         }

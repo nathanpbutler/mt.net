@@ -173,6 +173,8 @@ public class VideoProcessor
             }
             else
             {
+                // Use (numCaps + 1) to ensure frames are extractable (not at exact video end)
+                // This spacing ensures the last frame is safely before the video end
                 var step = workingDuration.TotalSeconds / (numCaps + 1);
 
                 for (int i = 1; i <= numCaps; i++)
