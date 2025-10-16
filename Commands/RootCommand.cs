@@ -36,31 +36,7 @@ public static class RootCommandBuilder
             Arity = ArgumentArity.ExactlyOne
         };
 
-        // Global/Config options
-        var configOption = new Option<FileInfo>("--config")
-        {
-            Description = "Configuration file path",
-            Arity = ArgumentArity.ExactlyOne
-        };
-
-        var verboseOption = new Option<bool>("--verbose", ["-v"])
-        {
-            Description = "Enable verbose logging",
-            Arity = ArgumentArity.ExactlyOne
-        };
-
-        var composerOption = new Option<string>("--composer")
-        {
-            Description = "Choose image composer: ffmpeg, imagesharp",
-            // CompletionSources = { "ffmpeg", "imagesharp" },
-            DefaultValueFactory = _ => "ffmpeg" // FFMpeg.AutoGen is now default
-        };
-        composerOption.CompletionSources.Add(ctx =>
-        {
-            return [new CompletionItem("ffmpeg"), new CompletionItem("imagesharp")];
-        });
-
-        // Basic thumbnail options
+        // Basic Options
         var numCapsOption = new Option<int>("--numcaps", ["-n"])
         {
             Description = "Number of captures to make",
@@ -108,7 +84,14 @@ public static class RootCommandBuilder
             return [];
         });
 
-        // Time options
+        // Time Options
+        var intervalOption = new Option<int>("--interval")
+        {
+            Description = "Interval between captures in seconds (overrides numcaps)",
+            DefaultValueFactory = _ => 0
+        };
+        intervalOption.Aliases.Add("-i");
+
         var fromOption = new Option<string>("--from")
         {
             Description = "Start time for captures (HH:MM:SS)",
@@ -122,31 +105,18 @@ public static class RootCommandBuilder
         };
         toOption.Aliases.Add("--end");
 
-        var intervalOption = new Option<int>("--interval")
+        var skipCreditsOption = new Option<bool>("--skip-credits")
         {
-            Description = "Interval between captures in seconds (overrides numcaps)",
-            DefaultValueFactory = _ => 0
-        };
-        intervalOption.Aliases.Add("-i");
-
-        // Output control options
-        var singleImagesOption = new Option<bool>("--single-images")
-        {
-            Description = "Save individual images instead of contact sheet"
-        };
-        singleImagesOption.Aliases.Add("-s");
-
-        var overwriteOption = new Option<bool>("--overwrite")
-        {
-            Description = "Overwrite existing files"
+            Description = "Skip end credits by cutting off last 2 minutes or 10%"
         };
 
-        var skipExistingOption = new Option<bool>("--skip-existing")
+        // Visual Options
+        var filterOption = new Option<string>("--filter")
         {
-            Description = "Skip processing if output already exists"
+            Description = "Image filters to apply (comma-separated): none, greyscale, invert, sepia, fancy, cross, strip",
+            DefaultValueFactory = _ => "none"
         };
 
-        // Visual options
         var fontOption = new Option<string>("--font")
         {
             Description = "Font to use for timestamps and header",
@@ -224,19 +194,13 @@ public static class RootCommandBuilder
             Description = "Watermark image for all thumbnails"
         };
 
-        // Filter options
-        var filterOption = new Option<string>("--filter")
+        var commentOption = new Option<string>("--comment")
         {
-            Description = "Image filters to apply (comma-separated): none, greyscale, invert, sepia, fancy, cross, strip",
-            DefaultValueFactory = _ => "none"
+            Description = "Comment to add to header",
+            DefaultValueFactory = _ => "contactsheet created with mt.net (https://github.com/nathanpbutler/mt.net)"
         };
 
-        var filtersOption = new Option<bool>("--filters")
-        {
-            Description = "List all available image filters"
-        };
-
-        // Processing options
+        // Processing Options
         var skipBlankOption = new Option<bool>("--skip-blank")
         {
             Description = "Skip blank frames (up to 3 retries)"
@@ -246,11 +210,6 @@ public static class RootCommandBuilder
         var skipBlurryOption = new Option<bool>("--skip-blurry")
         {
             Description = "Skip blurry frames (up to 3 retries)"
-        };
-
-        var skipCreditsOption = new Option<bool>("--skip-credits")
-        {
-            Description = "Skip end credits by cutting off last 2 minutes or 10%"
         };
 
         var fastOption = new Option<bool>("--fast")
@@ -263,30 +222,6 @@ public static class RootCommandBuilder
             Description = "Use content filtering for safe-for-work output (experimental)"
         };
 
-        // WebVTT options
-        var vttOption = new Option<bool>("--vtt")
-        {
-            Description = "Generate WebVTT file for HTML5 video players"
-        };
-
-        var webVttOption = new Option<bool>("--webvtt")
-        {
-            Description = "Generate WebVTT with disabled headers, padding, and timestamps"
-        };
-
-        // Upload options
-        var uploadOption = new Option<bool>("--upload")
-        {
-            Description = "Upload generated files via HTTP"
-        };
-
-        var uploadUrlOption = new Option<string>("--upload-url")
-        {
-            Description = "URL for file upload",
-            DefaultValueFactory = _ => "http://example.com/upload"
-        };
-
-        // Threshold options
         var blurThresholdOption = new Option<int>("--blur-threshold")
         {
             Description = "Threshold for blur detection (0-100)",
@@ -299,14 +234,51 @@ public static class RootCommandBuilder
             DefaultValueFactory = _ => 85
         };
 
-        // Comment option
-        var commentOption = new Option<string>("--comment")
+        // Output Options
+        var singleImagesOption = new Option<bool>("--single-images")
         {
-            Description = "Comment to add to header",
-            DefaultValueFactory = _ => "contactsheet created with mt.net (https://github.com/nathanpbutler/mt.net)"
+            Description = "Save individual images instead of contact sheet"
+        };
+        singleImagesOption.Aliases.Add("-s");
+
+        var overwriteOption = new Option<bool>("--overwrite")
+        {
+            Description = "Overwrite existing files"
         };
 
-        // Configuration options
+        var skipExistingOption = new Option<bool>("--skip-existing")
+        {
+            Description = "Skip processing if output already exists"
+        };
+
+        var vttOption = new Option<bool>("--vtt")
+        {
+            Description = "Generate WebVTT file for HTML5 video players"
+        };
+
+        var webVttOption = new Option<bool>("--webvtt")
+        {
+            Description = "Generate WebVTT with disabled headers, padding, and timestamps"
+        };
+
+        // Upload Options
+        var uploadOption = new Option<bool>("--upload")
+        {
+            Description = "Upload generated files via HTTP"
+        };
+
+        var uploadUrlOption = new Option<string>("--upload-url")
+        {
+            Description = "URL for file upload",
+            DefaultValueFactory = _ => "http://example.com/upload"
+        };
+
+        // Configuration Options
+        var configOption = new Option<FileInfo>("--config")
+        {
+            Description = "Configuration file path",
+            Arity = ArgumentArity.ExactlyOne
+        };
         var saveConfigOption = new Option<string>("--save-config")
         {
             Description = "Save current settings to configuration file"
@@ -322,15 +294,33 @@ public static class RootCommandBuilder
             Description = "Show configuration file path and values, then exit"
         };
 
+        // Global Options
+        var composerOption = new Option<string>("--composer")
+        {
+            Description = "Choose image composer: ffmpeg, imagesharp",
+            // CompletionSources = { "ffmpeg", "imagesharp" },
+            DefaultValueFactory = _ => "ffmpeg" // FFMpeg.AutoGen is now default
+        };
+        composerOption.CompletionSources.Add(ctx =>
+        {
+            return [new CompletionItem("ffmpeg"), new CompletionItem("imagesharp")];
+        });
+
+        var verboseOption = new Option<bool>("--verbose", ["-v"])
+        {
+            Description = "Enable verbose logging",
+            Arity = ArgumentArity.ExactlyOne
+        };
+
+        var filtersOption = new Option<bool>("--filters")
+        {
+            Description = "List all available image filters"
+        };
+
         // Add argument and all options to root command
         rootCommand.Arguments.Add(fileArgument);
 
-        // Global options
-        rootCommand.Options.Add(configOption);
-        rootCommand.Options.Add(verboseOption);
-        rootCommand.Options.Add(composerOption);
-
-        // Basic options
+        // Basic Options
         rootCommand.Options.Add(numCapsOption);
         rootCommand.Options.Add(columnsOption);
         rootCommand.Options.Add(widthOption);
@@ -338,17 +328,14 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(paddingOption);
         rootCommand.Options.Add(outputOption);
 
-        // Time options
+        // Time Options
+        rootCommand.Options.Add(intervalOption);
         rootCommand.Options.Add(fromOption);
         rootCommand.Options.Add(toOption);
-        rootCommand.Options.Add(intervalOption);
+        rootCommand.Options.Add(skipCreditsOption);
 
-        // Output control
-        rootCommand.Options.Add(singleImagesOption);
-        rootCommand.Options.Add(overwriteOption);
-        rootCommand.Options.Add(skipExistingOption);
-
-        // Visual customization
+        // Visual Options
+        rootCommand.Options.Add(filterOption);
         rootCommand.Options.Add(fontOption);
         rootCommand.Options.Add(fontSizeOption);
         rootCommand.Options.Add(disableTimestampsOption);
@@ -356,45 +343,43 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(headerOption);
         rootCommand.Options.Add(headerMetaOption);
         rootCommand.Options.Add(headerImageOption);
-
-        // Colors and styling
         rootCommand.Options.Add(bgContentOption);
         rootCommand.Options.Add(bgHeaderOption);
         rootCommand.Options.Add(fgHeaderOption);
         rootCommand.Options.Add(borderOption);
-
-        // Watermarks
         rootCommand.Options.Add(watermarkOption);
         rootCommand.Options.Add(watermarkAllOption);
+        rootCommand.Options.Add(commentOption);
 
-        // Filters
-        rootCommand.Options.Add(filterOption);
-        rootCommand.Options.Add(filtersOption);
-
-        // Processing
+        // Processing Options
         rootCommand.Options.Add(skipBlankOption);
         rootCommand.Options.Add(skipBlurryOption);
-        rootCommand.Options.Add(skipCreditsOption);
         rootCommand.Options.Add(fastOption);
         rootCommand.Options.Add(sfwOption);
-
-        // WebVTT
-        rootCommand.Options.Add(vttOption);
-        rootCommand.Options.Add(webVttOption);
-
-        // Upload
-        rootCommand.Options.Add(uploadOption);
-        rootCommand.Options.Add(uploadUrlOption);
-
-        // Thresholds
         rootCommand.Options.Add(blurThresholdOption);
         rootCommand.Options.Add(blankThresholdOption);
 
-        // Misc
-        rootCommand.Options.Add(commentOption);
+        // Output Options
+        rootCommand.Options.Add(singleImagesOption);
+        rootCommand.Options.Add(overwriteOption);
+        rootCommand.Options.Add(skipExistingOption);
+        rootCommand.Options.Add(vttOption);
+        rootCommand.Options.Add(webVttOption);
+
+        // Upload Options
+        rootCommand.Options.Add(uploadOption);
+        rootCommand.Options.Add(uploadUrlOption);
+
+        // Configuration Options
+        rootCommand.Options.Add(configOption);
         rootCommand.Options.Add(saveConfigOption);
         rootCommand.Options.Add(configFileOption);
         rootCommand.Options.Add(showConfigOption);
+
+        // Global Options
+        rootCommand.Options.Add(composerOption);
+        rootCommand.Options.Add(verboseOption);
+        rootCommand.Options.Add(filtersOption);
 
         // Set the action for the root command (same logic as generate command)
         rootCommand.SetAction(async parseResult =>
@@ -418,10 +403,7 @@ public static class RootCommandBuilder
             // Build comprehensive options object
             var options = new ThumbnailOptions
             {
-                // Composer option
-                Composer = parseResult.GetValue(composerOption)!,
-
-                // Basic options
+                // Basic Options
                 NumCaps = parseResult.GetValue(numCapsOption),
                 Columns = parseResult.GetValue(columnsOption),
                 Width = parseResult.GetValue(widthOption),
@@ -429,17 +411,14 @@ public static class RootCommandBuilder
                 Padding = parseResult.GetValue(paddingOption),
                 Filename = parseResult.GetValue(outputOption)!,
 
-                // Time options
+                // Time Options
+                Interval = parseResult.GetValue(intervalOption),
                 From = parseResult.GetValue(fromOption)!,
                 End = parseResult.GetValue(toOption)!,
-                Interval = parseResult.GetValue(intervalOption),
+                SkipCredits = parseResult.GetValue(skipCreditsOption),
 
-                // Output control
-                SingleImages = parseResult.GetValue(singleImagesOption),
-                Overwrite = parseResult.GetValue(overwriteOption),
-                SkipExisting = parseResult.GetValue(skipExistingOption),
-
-                // Visual customization
+                // Visual Options
+                Filter = parseResult.GetValue(filterOption)!,
                 FontPath = parseResult.GetValue(fontOption)!,
                 FontSize = parseResult.GetValue(fontSizeOption),
                 DisableTimestamps = parseResult.GetValue(disableTimestampsOption),
@@ -447,41 +426,35 @@ public static class RootCommandBuilder
                 Header = parseResult.GetValue(headerOption),
                 HeaderMeta = parseResult.GetValue(headerMetaOption),
                 HeaderImage = parseResult.GetValue(headerImageOption) ?? "",
-
-                // Colors and styling
                 BgContent = parseResult.GetValue(bgContentOption)!,
                 BgHeader = parseResult.GetValue(bgHeaderOption)!,
                 FgHeader = parseResult.GetValue(fgHeaderOption)!,
                 Border = parseResult.GetValue(borderOption),
-
-                // Watermarks
                 Watermark = parseResult.GetValue(watermarkOption) ?? "",
                 WatermarkAll = parseResult.GetValue(watermarkAllOption) ?? "",
+                Comment = parseResult.GetValue(commentOption)!,
 
-                // Filters
-                Filter = parseResult.GetValue(filterOption)!,
-
-                // Processing
+                // Processing Options
                 SkipBlank = parseResult.GetValue(skipBlankOption),
                 SkipBlurry = parseResult.GetValue(skipBlurryOption),
-                SkipCredits = parseResult.GetValue(skipCreditsOption),
                 Fast = parseResult.GetValue(fastOption),
                 Sfw = parseResult.GetValue(sfwOption),
-
-                // WebVTT
-                Vtt = parseResult.GetValue(vttOption),
-                WebVtt = parseResult.GetValue(webVttOption),
-
-                // Upload
-                Upload = parseResult.GetValue(uploadOption),
-                UploadUrl = parseResult.GetValue(uploadUrlOption)!,
-
-                // Thresholds
                 BlurThreshold = parseResult.GetValue(blurThresholdOption),
                 BlankThreshold = parseResult.GetValue(blankThresholdOption),
 
-                // Misc
-                Comment = parseResult.GetValue(commentOption)!
+                // Output Options
+                SingleImages = parseResult.GetValue(singleImagesOption),
+                Overwrite = parseResult.GetValue(overwriteOption),
+                SkipExisting = parseResult.GetValue(skipExistingOption),
+                Vtt = parseResult.GetValue(vttOption),
+                WebVtt = parseResult.GetValue(webVttOption),
+
+                // Upload Options
+                Upload = parseResult.GetValue(uploadOption),
+                UploadUrl = parseResult.GetValue(uploadUrlOption)!,
+
+                // Global Options
+                Composer = parseResult.GetValue(composerOption)!
             };
 
             // Handle WebVTT special mode (mimics Go behavior at mt.go:441-447)

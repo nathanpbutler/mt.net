@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD033 -->
 # mt.net
 
-A .NET port of the Go-based media thumbnailing tool `mt` (media thumbnailer). This tool generates thumbnail contact sheets from video files using FFmpeg, with configurable screenshot count, layout, and styling options.
+A .NET port of the Go-based media thumbnailing tool [mt](https://github.com/mutschler/mt) (media thumbnailer). This tool generates thumbnail contact sheets from video files using FFmpeg, with configurable screenshot count, layout, and styling options.
 
 ## Features
 
@@ -49,7 +49,7 @@ dotnet build
    # Ubuntu/Debian
    sudo apt-get install ffmpeg
 
-   # Windows: Download from https://ffmpeg.org/download.html
+   # Windows: Download from https://www.gyan.dev/ffmpeg/builds and add to PATH
    ```
 
 2. **Build the project**:
@@ -61,34 +61,34 @@ dotnet build
 3. **Generate your first contact sheet**:
 
    ```bash
-   dotnet run -- path/to/your/video.mp4
+   mt path/to/your/video.mp4
    ```
 
 ## Usage
 
 ### Basic Usage
 
-```bash
+```powershell
 # Generate a 3x3 grid of thumbnails (default: 4 thumbnails, 2 columns)
-dotnet run -- video.mp4
+mt video.mp4
 
 # Custom layout with 9 thumbnails in 3 columns, 300px width
-dotnet run -- video.mp4 --numcaps 9 --columns 3 --width 300
+mt video.mp4 --numcaps 9 --columns 3 --width 300
 
 # Apply filters and skip blank frames
-dotnet run -- video.mp4 --filter greyscale,sepia --skip-blank --header-meta
+mt video.mp4 --filter greyscale,sepia --skip-blank --header-meta
 
 # Generate individual thumbnail images instead of contact sheet
-dotnet run -- video.mp4 --single-images
+mt video.mp4 --single-images
 
 # Create WebVTT file for HTML5 video players
-dotnet run -- video.mp4 --vtt
+mt video.mp4 --vtt
 
 # Show available filters
-dotnet run -- --filters
+mt --filters
 
 # Show all available options
-dotnet run -- --help
+mt --help
 ```
 
 ### Command Line Options
@@ -97,16 +97,16 @@ The tool provides comprehensive command-line options organized into several cate
 
 #### Basic Options
 
-- `--numcaps, -n`: Number of screenshots to generate (default: 4)
-- `--columns, -c`: Number of columns in the grid (default: 2)
-- `--width, -w`: Width of individual thumbnails in pixels (default: 400)
-- `--height`: Height of individual thumbnails in pixels (default: 0 = auto)
-- `--padding, -p`: Padding between images in pixels (default: 10)
-- `--output, -o`: Output filename pattern (default: `{{.Path}}{{.Name}}.jpg`)
+- `-n, --numcaps`: Number of screenshots to generate (default: 4)
+- `-c, --columns`: Number of columns in the grid (default: 2)
+- `-w, --width`: Width of individual thumbnails in pixels (default: 400)
+- `-h, --height`: Height of individual thumbnails in pixels (default: 0 = auto)
+- `-p, --padding`: Padding between images in pixels (default: 10)
+- `-o, --output`: Output filename pattern (default: `{{.Path}}{{.Name}}.jpg`)
 
 #### Time Options
 
-- `--interval, -i`: Time interval between captures in seconds (overrides numcaps)
+- `-i, --interval`: Time interval between captures in seconds (overrides numcaps)
 - `--from`: Start time for captures (HH:MM:SS, default: 00:00:00)
 - `--to, --end`: End time for captures (HH:MM:SS, default: 00:00:00)
 - `--skip-credits`: Skip end credits by cutting off last 2 minutes or 10%
@@ -162,13 +162,14 @@ The tool provides comprehensive command-line options organized into several cate
 
 - `--composer`: Choose image composer: `ffmpeg` (default) or `imagesharp`
 - `--verbose, -v`: Enable verbose logging
-- `--version`: Show version information
 - `--filters`: List all available image filters
+- `-?, --help, /h`: Show help and usage information
+- `--version`: Show version information
 
 For a complete list of options, run:
 
-```bash
-dotnet run -- --help
+```powershell
+mt --help
 ```
 
 ## Configuration
@@ -286,17 +287,34 @@ dotnet test
 
 ```text
 mt.net/
-├── Commands/           # CLI command definitions (RootCommand.cs)
-├── Configuration/      # Configuration management (AppConfig, ConfigurationBuilder)
-├── Models/            # Data models (ThumbnailOptions, HeaderInfo, ImageFilter)
-├── Services/          # Business logic services
-│   ├── VideoProcessor.cs          # Video metadata and frame extraction
-│   ├── ImageComposer.cs           # Contact sheet creation
-│   ├── FilterService.cs           # Image filters
-│   ├── ContentDetectionService.cs # Blank/blur detection
-│   └── OutputService.cs           # File saving and WebVTT
-├── Utilities/         # Helper utilities (ColorParser, TimeSpanParser, FileValidator)
-└── reference/         # Original Go implementation
+├── Program.cs                      # Application entry point
+├── Commands/
+│   └── RootCommand.cs              # CLI command definitions and argument parsing
+├── Configuration/
+│   ├── AppConfig.cs                # Application configuration model
+│   └── ConfigurationBuilder.cs     # Configuration file and environment variable support
+├── Models/
+│   ├── ThumbnailOptions.cs         # Thumbnail generation options
+│   ├── HeaderInfo.cs               # Contact sheet header metadata
+│   └── ImageFilter.cs              # Image filter definitions
+├── Services/
+│   ├── VideoProcessor.cs           # Video metadata extraction and processing
+│   ├── FFmpegAutoGenVideoDecoder.cs # FFmpeg.AutoGen frame extraction
+│   ├── ImageComposer.cs            # Legacy ImageSharp contact sheet composer
+│   ├── FFmpegFilterGraphComposer.cs # Default FFmpeg filter graph composer
+│   ├── FilterService.cs            # Legacy ImageSharp filter implementations
+│   ├── FFmpegFilterService.cs      # FFmpeg-based filter implementations
+│   ├── ContentDetectionService.cs  # Blank and blur frame detection
+│   └── OutputService.cs            # File saving and WebVTT generation
+├── Utilities/
+│   ├── ColorParser.cs              # RGB color string parsing
+│   ├── TimeSpanParser.cs           # Time string parsing (HH:MM:SS)
+│   ├── FileValidator.cs            # File path validation
+│   └── FFmpegHelper.cs             # FFmpeg.AutoGen helper functions
+├── reference/
+│   └── original-mt/                # Original Go implementation source code
+└── samples/
+    └── rick.jpg                    # Example contact sheet output
 ```
 
 ## How It Works
@@ -356,4 +374,4 @@ This project is licensed under the GNU General Public License v3.0. See the [LIC
 
 ## Acknowledgments
 
-This project is based on the original `mt` tool written in Go. Thanks to the original developer for creating such a useful media processing utility.
+This project is based on the original [mt](https://github.com/mutschler/mt) tool written in Go. Thanks to the original developer for creating such a useful media processing utility.

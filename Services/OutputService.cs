@@ -27,8 +27,7 @@ public class OutputService
 
             if (!options.Overwrite)
             {
-                Console.WriteLine($"File exists and overwrite not enabled: {outputPath}");
-                return outputPath;
+                outputPath = GetNextAvailablePath(outputPath);
             }
         }
 
@@ -83,6 +82,21 @@ public class OutputService
         {
             var (frame, _) = frames[i];
             var individualPath = Path.Combine(baseDir, $"{baseName}_{i + 1:D3}{extension}");
+
+            // Handle file existence with skip/overwrite logic
+            if (File.Exists(individualPath))
+            {
+                if (options.SkipExisting)
+                {
+                    savedPaths.Add(individualPath);
+                    continue;
+                }
+
+                if (!options.Overwrite)
+                {
+                    individualPath = GetNextAvailablePath(individualPath);
+                }
+            }
 
             try
             {
@@ -191,5 +205,28 @@ public class OutputService
     private static string FormatVttTimestamp(TimeSpan timestamp)
     {
         return $"{timestamp.Hours:D2}:{timestamp.Minutes:D2}:{timestamp.Seconds:D2}.{timestamp.Milliseconds:D3}";
+    }
+
+    /// <summary>
+    /// Finds the next available filename by incrementing a counter suffix (-01, -02, etc.)
+    /// Matches the behavior of the original mt Go implementation.
+    /// </summary>
+    private static string GetNextAvailablePath(string filePath)
+    {
+        var directory = Path.GetDirectoryName(filePath) ?? "";
+        var filename = Path.GetFileNameWithoutExtension(filePath);
+        var extension = Path.GetExtension(filePath);
+
+        var counter = 1;
+        string newPath;
+
+        do
+        {
+            var newFilename = $"{filename}-{counter:D2}{extension}";
+            newPath = Path.Combine(directory, newFilename);
+            counter++;
+        } while (File.Exists(newPath));
+
+        return newPath;
     }
 }
