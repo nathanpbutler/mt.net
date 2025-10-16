@@ -262,7 +262,8 @@ dotnet run -- --help     # Show all options
   - Generates xywh coordinates for HTML5 video player sprite sheet navigation
   - Each cue maps timestamp range to thumbnail region in contact sheet
 - ✅ BuildOutputPath() - Filename pattern substitution ({{.Path}}, {{.Name}})
-- ✅ HandleFileOverwrite() - Overwrite/skip-existing logic
+- ✅ GetNextAvailablePath() - Automatic filename incrementing with -01, -02, etc. suffix (matches Go implementation)
+- ✅ File handling logic - Overwrite/skip-existing/auto-increment behavior matching original mt
 
 #### ❌ Upload Service (UploadService.cs) **Priority: LOW**
 

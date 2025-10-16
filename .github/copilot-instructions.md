@@ -82,6 +82,18 @@ numCapsOption.Aliases.Add("-n");
 
 Output paths use Go-template style patterns (`{{.Path}}{{.Name}}.jpg`) processed in `OutputService.BuildOutputPath()`.
 
+### File Handling Behavior
+
+When output files already exist, the tool follows this logic (matching the original Go implementation):
+
+1. **`--skip-existing`**: Skip processing entirely if file exists
+2. **`--overwrite`**: Replace existing file
+3. **Default (neither flag set)**: Automatically increment filename with `-01`, `-02`, etc. suffix
+
+Example: `output.jpg` → `output-01.jpg` → `output-02.jpg`
+
+This behavior is implemented in `OutputService.GetNextAvailablePath()` and applies to both contact sheets and individual thumbnail images.
+
 ### WebVTT Implementation Pattern
 
 WebVTT generation achieves full feature parity with the Go implementation through a dual timestamp approach:

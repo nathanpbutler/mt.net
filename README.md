@@ -141,10 +141,12 @@ The tool provides comprehensive command-line options organized into several cate
 #### Output Options
 
 - `--single-images, -s`: Save individual images instead of contact sheet
-- `--overwrite`: Overwrite existing files
+- `--overwrite`: Overwrite existing files (default behavior: increment filename with -01, -02, etc.)
 - `--skip-existing`: Skip processing if output already exists
 - `--vtt`: Generate WebVTT file for HTML5 video players
 - `--webvtt`: Generate WebVTT with disabled headers, padding, and timestamps
+
+**Note**: When an output file already exists and `--overwrite` is not set, the tool will automatically increment the filename (e.g., `output.jpg` → `output-01.jpg` → `output-02.jpg`). This matches the behavior of the original Go implementation.
 
 #### Upload Options
 
