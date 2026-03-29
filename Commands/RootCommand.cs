@@ -98,6 +98,11 @@ public static class RootCommandBuilder
             DefaultValueFactory = _ => "none"
         };
 
+        var v360Option = new Option<bool>("--v360")
+        {
+            Description = "Apply v360 filter for 360-degree VR video conversion (overrides width/height to 400x300)"
+        };
+
         var fontOption = new Option<string>("--font", ["-f"])
         {
             Description = "Font to use for timestamps and header",
@@ -254,6 +259,11 @@ public static class RootCommandBuilder
             Description = "Generate WebVTT with disabled headers, padding, and timestamps"
         };
 
+        var noMtimeOption = new Option<bool>("--no-mtime")
+        {
+            Description = "Do not apply input file's modified date to output files"
+        };
+
         // Configuration Options
         var configOption = new Option<FileInfo>("--config")
         {
@@ -328,6 +338,7 @@ public static class RootCommandBuilder
 
         // Visual Options
         rootCommand.Options.Add(filterOption);
+        rootCommand.Options.Add(v360Option);
         rootCommand.Options.Add(fontOption);
         rootCommand.Options.Add(fontSizeOption);
         rootCommand.Options.Add(disableTimestampsOption);
@@ -358,6 +369,7 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(skipExistingOption);
         rootCommand.Options.Add(vttOption);
         rootCommand.Options.Add(webVttOption);
+        rootCommand.Options.Add(noMtimeOption);
 
         // Configuration Options
         rootCommand.Options.Add(configOption);
@@ -411,6 +423,7 @@ public static class RootCommandBuilder
 
                 // Visual Options
                 Filter = parseResult.GetValue(filterOption)!,
+                V360 = parseResult.GetValue(v360Option),
                 FontPath = parseResult.GetValue(fontOption)!,
                 FontSize = parseResult.GetValue(fontSizeOption),
                 DisableTimestamps = parseResult.GetValue(disableTimestampsOption),
@@ -441,6 +454,7 @@ public static class RootCommandBuilder
                 SkipExisting = parseResult.GetValue(skipExistingOption),
                 Vtt = parseResult.GetValue(vttOption),
                 WebVtt = parseResult.GetValue(webVttOption),
+                NoMtime = parseResult.GetValue(noMtimeOption),
 
                 // Upload Options
                 Upload = parseResult.GetValue(uploadOption),

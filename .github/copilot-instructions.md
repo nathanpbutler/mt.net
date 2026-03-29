@@ -94,6 +94,15 @@ Example: `output.jpg` → `output-01.jpg` → `output-02.jpg`
 
 This behavior is implemented in `OutputService.GetNextAvailablePath()` and applies to both contact sheets and individual thumbnail images.
 
+### Modified Time (mtime) Behavior
+
+By default, mt.net applies the input video file's modified date to all output files (contact sheets, individual images, and WebVTT files). This behavior can be disabled using the `--no-mtime` option.
+
+- **Default**: Output files inherit the input file's modified date
+- **`--no-mtime`**: Output files use the current timestamp
+
+This is implemented in `OutputService` methods: `SaveContactSheetAsync()`, `SaveIndividualImagesAsync()`, and `GenerateWebVttAsync()`.
+
 ### WebVTT Implementation Pattern
 
 WebVTT generation achieves full feature parity with the Go implementation through a dual timestamp approach:
@@ -265,6 +274,18 @@ catch (Exception ex)
 ### Filter Implementation Pattern
 
 All filters in `FilterService` implement consistent interfaces and support chaining via comma-separated strings.
+
+### v360 Filter for VR Videos
+
+The `--v360` option applies FFmpeg's v360 filter during the frame processing stage (not during extraction):
+
+- **Location**: Applied in `FFmpegFilterGraphComposer.BuildFrameFilterSpec()` (line 191-196)
+- **Filter chain**: `v360=input=hequirect:output=flat:in_stereo=sbs:out_stereo=2d:d_fov=125:w=400:h=300:pitch=-25` → `format=pix_fmts=rgba`
+- **Purpose**: Converts 360° equirectangular VR video to flat 2D projection
+- **Input format**: Side-by-side stereo (SBS)
+- **Output**: Flat 2D at 400x300 resolution
+- **Pixel format conversion**: Critical to convert from YUV (v360 output) to RGBA (expected by AVFrameToImage)
+- **Integration**: Replaces the normal `scale` filter in the processing pipeline
 
 ### Color Parsing Convention
 

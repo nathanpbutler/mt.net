@@ -187,14 +187,25 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     {
         var filters = new List<string>();
 
-        // Calculate target dimensions
-        var thumbnailWidth = options.Width;
-        var thumbnailHeight = options.Height > 0
-            ? options.Height
-            : (int)(height * (thumbnailWidth / (double)width));
+        // Add v360 filter if enabled (applies 360-to-flat transformation with built-in resizing)
+        if (options.V360)
+        {
+            // v360 filter handles both projection conversion and resizing in one step
+            filters.Add("v360=input=hequirect:output=flat:in_stereo=sbs:out_stereo=2d:d_fov=125:w=400:h=300:pitch=-25");
+            // Convert from YUV (v360 output) to RGBA (expected by AVFrameToImage)
+            filters.Add("format=pix_fmts=rgba");
+        }
+        else
+        {
+            // Calculate target dimensions for regular scaling
+            var thumbnailWidth = options.Width;
+            var thumbnailHeight = options.Height > 0
+                ? options.Height
+                : (int)(height * (thumbnailWidth / (double)width));
 
-        // Scale filter
-        filters.Add($"scale={thumbnailWidth}:{thumbnailHeight}");
+            // Scale filter (only when not using v360, as v360 includes resizing)
+            filters.Add($"scale={thumbnailWidth}:{thumbnailHeight}");
+        }
 
         // Add timestamp if enabled
         if (!options.DisableTimestamps)

@@ -14,6 +14,7 @@ A .NET port of [mt](https://github.com/mutschler/mt) (media thumbnailer). Genera
 - Generate thumbnail contact sheets from video files
 - Configurable grid layout, dimensions, and styling
 - Image filters (greyscale, sepia, invert, fancy, cross, strip)
+- 360-degree VR video support with v360 filter
 - Skip blank or blurry frames automatically
 - WebVTT output for HTML5 video players
 - Individual thumbnail export
@@ -81,6 +82,7 @@ mt video.mp4 --vtt
 **Visual:**
 
 - `--filter`: Apply filters (greyscale, sepia, invert, fancy, cross, strip)
+- `--v360`: Apply v360 filter for 360-degree VR video conversion (equirectangular to flat projection, side-by-side to 2D, outputs 400x300)
 - `-f, --font`: Font for timestamps and header (default: DroidSans)
 - `--font-size`: Font size in pixels (default: 12)
 - `-d, --disable-timestamps`: Disable timestamp overlay
@@ -111,6 +113,7 @@ mt video.mp4 --vtt
 - `--skip-existing`: Skip processing if output already exists
 - `--vtt`: Generate WebVTT file
 - `--webvtt`: WebVTT mode (disables headers, padding, timestamps)
+- `--no-mtime`: Do not apply input file's modified date to output files (default: applies mtime)
 
 **Configuration:**
 

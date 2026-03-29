@@ -39,10 +39,12 @@ public class ThumbnailOptions
     public bool ShowConfig { get; set; } = false;
     public bool Vtt { get; set; } = false;
     public bool WebVtt { get; set; } = false;
+    public bool V360 { get; set; } = false;
     public int BlurThreshold { get; set; } = 62;
     public int BlankThreshold { get; set; } = 85;
     public bool Upload { get; set; } = false;
     public string UploadUrl { get; set; } = "http://example.com/upload";
     public bool SkipCredits { get; set; } = false;
     public int Interval { get; set; } = 0;
+    public bool NoMtime { get; set; } = false;
 }

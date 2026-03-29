@@ -53,6 +53,17 @@ public class OutputService
             }
 
             Console.WriteLine($"Saved contact sheet: {outputPath}");
+
+            // Apply input file's modified date to output file unless --no-mtime is specified
+            if (!options.NoMtime)
+            {
+                var inputFileInfo = new FileInfo(videoPath);
+                if (inputFileInfo.Exists)
+                {
+                    File.SetLastWriteTime(outputPath, inputFileInfo.LastWriteTime);
+                }
+            }
+
             return outputPath;
         }
         catch (Exception ex)
@@ -107,6 +118,16 @@ public class OutputService
                 else
                 {
                     await frame.SaveAsJpegAsync(individualPath, new JpegEncoder { Quality = 90 });
+                }
+
+                // Apply input file's modified date to output file unless --no-mtime is specified
+                if (!options.NoMtime)
+                {
+                    var inputFileInfo = new FileInfo(videoPath);
+                    if (inputFileInfo.Exists)
+                    {
+                        File.SetLastWriteTime(individualPath, inputFileInfo.LastWriteTime);
+                    }
                 }
 
                 savedPaths.Add(individualPath);
@@ -174,6 +195,17 @@ public class OutputService
         {
             await File.WriteAllTextAsync(vttPath, vtt.ToString());
             Console.WriteLine($"Saved WebVTT file: {vttPath}");
+
+            // Apply input file's modified date to output file unless --no-mtime is specified
+            if (!options.NoMtime)
+            {
+                var inputFileInfo = new FileInfo(videoPath);
+                if (inputFileInfo.Exists)
+                {
+                    File.SetLastWriteTime(vttPath, inputFileInfo.LastWriteTime);
+                }
+            }
+
             return vttPath;
         }
         catch (Exception ex)

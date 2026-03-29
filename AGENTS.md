@@ -29,6 +29,7 @@ The application uses a stateless service pattern with clear separation of concer
 - **FFmpegFilterGraphComposer** ([Services/FFmpegFilterGraphComposer.cs](Services/FFmpegFilterGraphComposer.cs)) - FFmpeg.AutoGen-based contact sheet creation with filter graphs (default)
 - **ImageComposer** ([Services/ImageComposer.cs](Services/ImageComposer.cs)) - Legacy ImageSharp-based contact sheet creation (fallback)
 - **FilterService** ([Services/FilterService.cs](Services/FilterService.cs)) - Image processing filters (greyscale, sepia, strip effects, etc.)
+- **v360 Filter** - 360-degree VR video conversion (applied in FFmpegFilterGraphComposer)
 - **ContentDetectionService** ([Services/ContentDetectionService.cs](Services/ContentDetectionService.cs)) - Frame quality analysis (blank/blur/NSFW detection)
 - **OutputService** ([Services/OutputService.cs](Services/OutputService.cs)) - File I/O, WebVTT generation, and filename pattern substitution
 
@@ -96,6 +97,27 @@ numCapsOption.Aliases.Add("-n");
 ### Filename Pattern Substitution
 
 Output paths use Go-template style patterns (`{{.Path}}{{.Name}}.jpg`) processed in `OutputService.BuildOutputPath()`.
+
+### File Handling Behavior
+
+When output files already exist, the tool follows this logic (matching the original Go implementation):
+
+1. **`--skip-existing`**: Skip processing entirely if file exists
+2. **`--overwrite`**: Replace existing file
+3. **Default (neither flag set)**: Automatically increment filename with `-01`, `-02`, etc. suffix
+
+Example: `output.jpg` → `output-01.jpg` → `output-02.jpg`
+
+This behavior is implemented in `OutputService.GetNextAvailablePath()` and applies to both contact sheets and individual thumbnail images.
+
+### Modified Time (mtime) Behavior
+
+By default, mt.net applies the input video file's modified date to all output files (contact sheets, individual images, and WebVTT files). This behavior can be disabled using the `--no-mtime` option.
+
+- **Default**: Output files inherit the input file's modified date
+- **`--no-mtime`**: Output files use the current timestamp
+
+This is implemented in `OutputService` methods: `SaveContactSheetAsync()`, `SaveIndividualImagesAsync()`, and `GenerateWebVttAsync()`.
 
 ### WebVTT Implementation Pattern
 
@@ -254,16 +276,20 @@ dotnet run -- --help     # Show all options
 [Services/OutputService.cs](Services/OutputService.cs) - File handling and export:
 
 - ✅ SaveContactSheetAsync() - Save contact sheets in JPEG/PNG formats
+  - Applies input file's modified date to output by default (unless `--no-mtime` is specified)
 - ✅ SaveIndividualImagesAsync() - Save individual thumbnail images
+  - Applies input file's modified date to each output image by default (unless `--no-mtime` is specified)
 - ✅ GenerateWebVttAsync() - Generate WebVTT files with cue points (**Full feature parity with Go implementation**)
   - Takes pre-calculated VTT timestamps array (evenly-spaced intervals from 00:00:00 to video duration)
   - Calculates header height for Y-coordinate offset (matches ImageComposer logic)
   - Includes padding in X/Y coordinate calculations: `(col * width) + (padding * col) + padding`
   - Generates xywh coordinates for HTML5 video player sprite sheet navigation
   - Each cue maps timestamp range to thumbnail region in contact sheet
+  - Applies input file's modified date to VTT file by default (unless `--no-mtime` is specified)
 - ✅ BuildOutputPath() - Filename pattern substitution ({{.Path}}, {{.Name}})
 - ✅ GetNextAvailablePath() - Automatic filename incrementing with -01, -02, etc. suffix (matches Go implementation)
 - ✅ File handling logic - Overwrite/skip-existing/auto-increment behavior matching original mt
+- ✅ Modified time preservation - Applies input file's mtime to all outputs by default (disable with `--no-mtime`)
 
 #### ❌ Upload Service (UploadService.cs) **Priority: LOW**
 
@@ -456,6 +482,18 @@ catch (Exception ex)
 ### Filter Implementation Pattern
 
 All filters in `FilterService` implement consistent interfaces and support chaining via comma-separated strings.
+
+### v360 Filter for VR Videos
+
+The `--v360` option applies FFmpeg's v360 filter for 360-degree VR video processing:
+
+- **Implementation**: Applied in `FFmpegFilterGraphComposer.BuildFrameFilterSpec()` during frame processing
+- **Filter specification**: `v360=input=hequirect:output=flat:in_stereo=sbs:out_stereo=2d:d_fov=125:w=400:h=300:pitch=-25`
+- **Input format**: Equirectangular 360° video with side-by-side stereo
+- **Output**: Flat 2D projection at 400x300 resolution
+- **Critical detail**: Must convert from YUV (v360 output) to RGBA format using `format=pix_fmts=rgba`
+- **Pipeline integration**: Replaces standard scale filter when enabled
+- **Example usage**: `mt vr-video.mp4 --v360`
 
 ### Color Parsing Convention
 
