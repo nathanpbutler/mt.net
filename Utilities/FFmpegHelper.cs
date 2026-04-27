@@ -64,23 +64,23 @@ public static class FFmpegHelper
 
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 {
-                    errorMsg += "On macOS, ensure FFmpeg 7.x is installed:\n" +
-                               "  brew install ffmpeg@7\n\n" +
+                    errorMsg += "On macOS, ensure FFmpeg 8.x is installed:\n" +
+                               "  brew install ffmpeg@8\n\n" +
                                "Check your installation:\n" +
-                               "  brew list ffmpeg@7\n" +
-                               "  brew info ffmpeg@7\n\n" +
-                               "NOTE: FFmpeg.AutoGen 7.1.1 requires FFmpeg 7.x libraries.\n" +
-                               "If you have FFmpeg 6.x or older, you need to install FFmpeg 7:\n" +
-                               "  brew install ffmpeg@7\n";
+                               "  brew list ffmpeg@8\n" +
+                               "  brew info ffmpeg@8\n\n" +
+                               "NOTE: FFmpeg.AutoGen 8.0.0.1 requires FFmpeg 8.x libraries.\n" +
+                               "If you have FFmpeg 7.x or older, you need to install FFmpeg 8:\n" +
+                               "  brew install ffmpeg@8\n";
                 }
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 {
-                    errorMsg += "On Linux, ensure FFmpeg 7.x is installed:\n" +
+                    errorMsg += "On Linux, ensure FFmpeg 8.x is installed:\n" +
                                "  apt-get install ffmpeg (or equivalent)\n";
                 }
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    errorMsg += "On Windows, download FFmpeg 7.x from:\n" +
+                    errorMsg += "On Windows, download FFmpeg 8.x from:\n" +
                                "  https://www.gyan.dev/ffmpeg/builds/\n";
                 }
 
@@ -103,8 +103,8 @@ public static class FFmpegHelper
             // Build list of paths to check
             var searchPaths = new List<string>();
 
-            // 1. Check for ffmpeg@7 Cellar (versioned keg-only installation)
-            var cellarBase = "/opt/homebrew/Cellar/ffmpeg@7";  // Apple Silicon
+            // 1. Check for ffmpeg@8 Cellar (versioned keg-only installation)
+            var cellarBase = "/opt/homebrew/Cellar/ffmpeg@8";  // Apple Silicon
             if (Directory.Exists(cellarBase))
             {
                 // Find all version subdirectories and get their lib paths
@@ -114,7 +114,7 @@ public static class FFmpegHelper
                 searchPaths.AddRange(versionDirs);
             }
 
-            cellarBase = "/usr/local/Cellar/ffmpeg@7";  // Intel Mac
+            cellarBase = "/usr/local/Cellar/ffmpeg@8";  // Intel Mac
             if (Directory.Exists(cellarBase))
             {
                 var versionDirs = Directory.GetDirectories(cellarBase)
@@ -124,15 +124,15 @@ public static class FFmpegHelper
             }
 
             // 2. Check opt link (keg-only)
-            searchPaths.Add("/opt/homebrew/opt/ffmpeg@7/lib");
-            searchPaths.Add("/usr/local/opt/ffmpeg@7/lib");
+            searchPaths.Add("/opt/homebrew/opt/ffmpeg@8/lib");
+            searchPaths.Add("/usr/local/opt/ffmpeg@8/lib");
 
             // 3. Check regular ffmpeg Cellar (if not keg-only)
             cellarBase = "/opt/homebrew/Cellar/ffmpeg";
             if (Directory.Exists(cellarBase))
             {
                 var versionDirs = Directory.GetDirectories(cellarBase)
-                    .Where(d => Path.GetFileName(d).StartsWith("7."))  // Only FFmpeg 7.x
+                    .Where(d => Path.GetFileName(d).StartsWith("8."))  // Only FFmpeg 8.x
                     .OrderByDescending(d => d)
                     .Select(d => Path.Combine(d, "lib"));
                 searchPaths.AddRange(versionDirs);
@@ -156,8 +156,8 @@ public static class FFmpegHelper
                 var testLibs = new[]
                 {
                     Path.Combine(path, "libavcodec.dylib"),
-                    Path.Combine(path, "libavcodec.61.dylib"),  // FFmpeg 7.x
-                    Path.Combine(path, "libavcodec.60.dylib"),  // FFmpeg 6.x (for reference)
+                    Path.Combine(path, "libavcodec.62.dylib"),  // FFmpeg 8.x
+                    Path.Combine(path, "libavcodec.61.dylib"),  // FFmpeg 7.x (for reference)
                 };
 
                 var foundLib = testLibs.FirstOrDefault(File.Exists);
@@ -174,7 +174,7 @@ public static class FFmpegHelper
             }
 
             // If we get here, we didn't find FFmpeg
-            Console.WriteLine("WARNING: No FFmpeg 7.x libraries found in standard Homebrew locations.");
+            Console.WriteLine("WARNING: No FFmpeg 8.x libraries found in standard Homebrew locations.");
             Console.WriteLine("Attempting to use system default paths (may fail)...");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))

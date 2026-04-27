@@ -87,7 +87,7 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
         _pSwsContext = ffmpeg.sws_getContext(
             Width, Height, PixelFormat,
             Width, Height, AVPixelFormat.AV_PIX_FMT_RGB24,
-            ffmpeg.SWS_BILINEAR, null, null, null);
+            (int)SwsFlags.SWS_BILINEAR, null, null, null);
 
         if (_pSwsContext == null)
         {
