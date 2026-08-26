@@ -238,14 +238,48 @@ public static class RootCommandBuilder
 
         var blurThresholdOption = new Option<int>("--blur-threshold")
         {
-            Description = "Threshold for blur detection (0-100)",
-            DefaultValueFactory = _ => 62
+            Description = "Blur detection aggressiveness: 0 never skips, 100 skips most",
+            DefaultValueFactory = _ => 60
         };
 
         var blankThresholdOption = new Option<int>("--blank-threshold")
         {
-            Description = "Threshold for blank frame detection (0-100)",
-            DefaultValueFactory = _ => 85
+            Description = "Blank detection aggressiveness: 0 never skips, 100 skips most",
+            DefaultValueFactory = _ => 50
+        };
+
+        var retriesOption = new Option<int>("--retries")
+        {
+            Description = "Attempts to find an acceptable frame before keeping the best candidate",
+            DefaultValueFactory = _ => 3
+        };
+
+        var retryStepOption = new Option<double>("--retry-step")
+        {
+            Description = "Seconds to advance between retry attempts",
+            DefaultValueFactory = _ => 1.0
+        };
+
+        var dedupeOption = new Option<bool>("--dedupe")
+        {
+            Description = "Skip frames that look like ones already chosen"
+        };
+
+        var dedupeThresholdOption = new Option<int>("--dedupe-threshold")
+        {
+            Description = "How alike two frames must be to count as duplicates (0-64, lower is stricter)",
+            DefaultValueFactory = _ => 6
+        };
+
+        var sceneDetectOption = new Option<bool>("--scene-detect")
+        {
+            Description = "Prefer a frame just after a scene change near each timestamp"
+        };
+
+        var sceneWindowOption = new Option<double>("--scene-window")
+        {
+            Description = "Seconds to search forward for a scene change",
+            DefaultValueFactory = _ => 5.0
         };
 
         var outputOption = new Option<string>("--output", ["-o"])
@@ -384,6 +418,12 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(sfwOption);
         rootCommand.Options.Add(blurThresholdOption);
         rootCommand.Options.Add(blankThresholdOption);
+        rootCommand.Options.Add(retriesOption);
+        rootCommand.Options.Add(retryStepOption);
+        rootCommand.Options.Add(dedupeOption);
+        rootCommand.Options.Add(dedupeThresholdOption);
+        rootCommand.Options.Add(sceneDetectOption);
+        rootCommand.Options.Add(sceneWindowOption);
 
         // Output Options
         rootCommand.Options.Add(outputOption);
@@ -462,6 +502,12 @@ public static class RootCommandBuilder
                 Sfw = parseResult.GetValue(sfwOption),
                 BlurThreshold = parseResult.GetValue(blurThresholdOption),
                 BlankThreshold = parseResult.GetValue(blankThresholdOption),
+                Retries = parseResult.GetValue(retriesOption),
+                RetryStep = parseResult.GetValue(retryStepOption),
+                Dedupe = parseResult.GetValue(dedupeOption),
+                DedupeThreshold = parseResult.GetValue(dedupeThresholdOption),
+                SceneDetect = parseResult.GetValue(sceneDetectOption),
+                SceneWindow = parseResult.GetValue(sceneWindowOption),
 
                 // Output Options
                 Filename = parseResult.GetValue(outputOption)!,
@@ -623,6 +669,10 @@ public static class RootCommandBuilder
         ConsoleOutput.Info("Extracting frames...");
         var frames = new List<(RgbaImage, TimeSpan)>();
 
+        var needs = ContentDetectionService.NeedsFor(options);
+        var chosenFingerprints = new List<ulong>();
+        var fallbacks = 0;
+
         using (var decoder = new FFmpegAutoGenVideoDecoder(videoPath))
         {
             for (int i = 0; i < timestamps.Count; i++)
@@ -633,32 +683,38 @@ public static class RootCommandBuilder
                 ConsoleOutput.Progress(
                     $"Extracting frame {paddedFrameNumber}/{timestamps.Count} at {timestamp:hh\\:mm\\:ss}...");
 
-                var frame = await VideoProcessor.ExtractFrameWithRetriesAsync(
-                    decoder,
-                    timestamp,
-                    options,
-                    skipCondition: img =>
-                    {
-                        if (options.SkipBlank && ContentDetectionService.IsBlankFrame(img, options.BlankThreshold))
-                            return true;
-                        if (options.SkipBlurry && ContentDetectionService.IsBlurryFrame(img, options.BlurThreshold))
-                            return true;
-                        if (options.Sfw && !ContentDetectionService.IsSafeForWork(img))
-                            return true;
-                        return false;
-                    },
-                    maxRetries: 3
-                );
+                var selection = await VideoProcessor.SelectFrameAsync(
+                    decoder, timestamp, options, needs, chosenFingerprints);
 
-                if (frame != null)
+                if (selection == null)
                 {
-                    frames.Add((frame, timestamp));
+                    continue;
                 }
+
+                if (selection.FellBack)
+                {
+                    fallbacks++;
+                }
+
+                if (needs.HasFlag(AnalysisNeeds.Fingerprint))
+                {
+                    chosenFingerprints.Add(selection.Analysis.Fingerprint);
+                }
+
+                // Keep the timestamp the frame actually came from: scene detection and retries
+                // both move it, and the overlay should say where the picture is really from.
+                frames.Add((selection.Image, selection.Timestamp));
             }
         }
 
         ConsoleOutput.ClearProgress();
         ConsoleOutput.Info($"Extracted {frames.Count} frames");
+
+        if (fallbacks > 0)
+        {
+            ConsoleOutput.Info(
+                $"  {fallbacks} frame(s) kept as best available after no candidate passed the content checks");
+        }
 
         try
         {

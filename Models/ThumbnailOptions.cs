@@ -60,8 +60,39 @@ public class ThumbnailOptions
     public bool SkipBlurry { get; set; } = false;
     public bool Sfw { get; set; } = false;
     public bool Fast { get; set; } = false;
-    public int BlurThreshold { get; set; } = 62;
-    public int BlankThreshold { get; set; } = 85;
+
+    /// <summary>
+    /// Blur aggressiveness, 0 (never skip) to 100 (maximally aggressive). The default reproduces
+    /// v2's effective cutoff, but the scale is logarithmic now — see
+    /// <see cref="Services.ContentDetectionService.BlurCutoff"/>.
+    /// </summary>
+    public int BlurThreshold { get; set; } = 60;
+
+    /// <summary>
+    /// Blank aggressiveness, 0 (never skip) to 100 (maximally aggressive). Note this reads the
+    /// opposite way round from v2, where lower meant stricter and 50 rejected everything.
+    /// </summary>
+    public int BlankThreshold { get; set; } = 50;
+
+    /// <summary>Attempts to find an acceptable frame before falling back to the best candidate.</summary>
+    public int Retries { get; set; } = 3;
+
+    /// <summary>Seconds to advance between retry attempts.</summary>
+    public double RetryStep { get; set; } = 1.0;
+
+    /// <summary>Skip frames that look like ones already chosen.</summary>
+    public bool Dedupe { get; set; } = false;
+
+    /// <summary>
+    /// Hamming distance below which two frame fingerprints count as duplicates (0-64).
+    /// </summary>
+    public int DedupeThreshold { get; set; } = 6;
+
+    /// <summary>Prefer a frame just after a scene change near each timestamp.</summary>
+    public bool SceneDetect { get; set; } = false;
+
+    /// <summary>Seconds to search forward for a scene change when <see cref="SceneDetect"/> is on.</summary>
+    public double SceneWindow { get; set; } = 5.0;
 
     // Output
     public string Filename { get; set; } = "{{.Path}}{{.Name}}.jpg";
@@ -156,6 +187,26 @@ public class ThumbnailOptions
         if (BlankThreshold is < 0 or > 100)
         {
             return $"--blank-threshold must be between 0 and 100 (got {BlankThreshold}).";
+        }
+
+        if (Retries < 1)
+        {
+            return $"--retries must be at least 1 (got {Retries}).";
+        }
+
+        if (RetryStep <= 0)
+        {
+            return $"--retry-step must be greater than 0 (got {RetryStep}).";
+        }
+
+        if (DedupeThreshold is < 0 or > 64)
+        {
+            return $"--dedupe-threshold must be between 0 and 64 (got {DedupeThreshold}).";
+        }
+
+        if (SceneWindow <= 0)
+        {
+            return $"--scene-window must be greater than 0 (got {SceneWindow}).";
         }
 
         foreach (var (label, value) in new[] { ("--from", From), ("--to", End) })

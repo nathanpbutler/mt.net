@@ -193,57 +193,222 @@ public class VideoProcessor
         return timestamps;
     }
 
+    /// <summary>A frame chosen for the sheet, with the measurements behind the choice.</summary>
+    /// <param name="Image">The decoded frame. The caller owns it.</param>
+    /// <param name="Timestamp">Where it was actually taken from, which may differ from the target.</param>
+    /// <param name="Analysis">Its metrics, reused by deduplication.</param>
+    /// <param name="FellBack">True when no candidate passed and this is the least-bad one.</param>
+    public sealed record FrameSelection(
+        RgbaImage Image,
+        TimeSpan Timestamp,
+        FrameAnalysis Analysis,
+        bool FellBack);
+
     /// <summary>
-    /// Extracts one frame at <paramref name="timestamp"/>, stepping forward a second at a time
-    /// when the frame cannot be decoded or is rejected by <paramref name="skipCondition"/>.
+    /// Picks the frame to use for one grid position, retrying forward when a candidate is
+    /// rejected and falling back to the best candidate seen if none passes.
     /// </summary>
+    /// <param name="decoder">An already-open decoder for the file.</param>
+    /// <param name="timestamp">Target timestamp.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <param name="needs">Which metrics to compute.</param>
+    /// <param name="chosenFingerprints">Fingerprints already accepted, for <c>--dedupe</c>.</param>
+    /// <returns>The chosen frame, or null when nothing could be decoded at all.</returns>
     /// <remarks>
-    /// Takes an already-open decoder. Until v3 this opened a brand new
-    /// <see cref="FFmpegAutoGenVideoDecoder"/> for every frame, re-parsing the container once per
-    /// thumbnail; the caller now opens one per file and seeks within it, which is what
-    /// <c>SeekAndExtractFrame</c> was always built to support (it seeks and flushes the codec
-    /// buffers on entry, so repeated calls are independent).
+    /// Takes an already-open decoder; v2 opened a new one per frame. The fallback matters as much
+    /// as the retry: v2 returned a frame it had already disposed when the last attempt was
+    /// rejected, and v3.0 dropped the thumbnail outright, so an aggressive threshold could
+    /// silently shrink the sheet or fail the run. Keeping the least-bad candidate means
+    /// <c>--numcaps N</c> yields N thumbnails whatever the detectors decide.
     /// </remarks>
-    public static async Task<RgbaImage?> ExtractFrameWithRetriesAsync(
+    public static async Task<FrameSelection?> SelectFrameAsync(
         FFmpegAutoGenVideoDecoder decoder,
         TimeSpan timestamp,
         ThumbnailOptions options,
-        Func<RgbaImage, bool>? skipCondition = null,
-        int maxRetries = 3)
+        AnalysisNeeds needs,
+        IReadOnlyList<ulong> chosenFingerprints)
     {
-        RgbaImage? frame = null;
-        var currentTimestamp = timestamp;
+        var startTimestamp = options.SceneDetect
+            ? await FindSceneStartAsync(decoder, timestamp, options)
+            : timestamp;
 
-        for (var attempt = 0; attempt < maxRetries; attempt++)
+        var currentTimestamp = startTimestamp;
+
+        RgbaImage? best = null;
+        var bestTimestamp = startTimestamp;
+        var bestAnalysis = default(FrameAnalysis);
+        var bestRatio = double.NegativeInfinity;
+
+        for (var attempt = 0; attempt < options.Retries; attempt++)
         {
-            try
-            {
-                frame = await Task.Run(() => decoder.SeekAndExtractFrame(currentTimestamp, options.Fast));
-            }
-            catch (Exception ex)
-            {
-                ConsoleOutput.Verbose($"Frame at {currentTimestamp:hh\\:mm\\:ss} failed to decode: {ex.Message}");
-                frame = null;
-            }
+            var frame = await DecodeAsync(decoder, currentTimestamp, options);
 
             if (frame == null)
             {
-                currentTimestamp = currentTimestamp.Add(TimeSpan.FromSeconds(1));
+                currentTimestamp = currentTimestamp.Add(TimeSpan.FromSeconds(options.RetryStep));
                 continue;
             }
 
-            if (skipCondition != null && skipCondition(frame))
+            // No checks enabled means the first frame that decodes is the answer.
+            if (needs == AnalysisNeeds.None)
             {
-                ConsoleOutput.Verbose($"Frame at {currentTimestamp:hh\\:mm\\:ss} rejected by content detection; retrying.");
-                frame.Dispose();
-                frame = null;
-                currentTimestamp = currentTimestamp.Add(TimeSpan.FromSeconds(1));
-                continue;
+                return new FrameSelection(frame, currentTimestamp, default, false);
             }
 
-            return frame;
+            var analysis = ContentDetectionService.Analyse(frame, needs);
+            var ratio = ContentDetectionService.AcceptanceRatio(analysis, options);
+
+            if (options.Dedupe && chosenFingerprints.Count > 0)
+            {
+                ratio = Math.Min(ratio, DuplicateRatio(analysis.Fingerprint, chosenFingerprints, options));
+            }
+
+            if (ratio >= 1.0)
+            {
+                best?.Dispose();
+                return new FrameSelection(frame, currentTimestamp, analysis, false);
+            }
+
+            ConsoleOutput.Verbose(
+                $"  {currentTimestamp:hh\\:mm\\:ss} rejected: {DescribeRejection(analysis, options, chosenFingerprints)}");
+
+            if (ratio > bestRatio)
+            {
+                best?.Dispose();
+                best = frame;
+                bestTimestamp = currentTimestamp;
+                bestAnalysis = analysis;
+                bestRatio = ratio;
+            }
+            else
+            {
+                frame.Dispose();
+            }
+
+            currentTimestamp = currentTimestamp.Add(TimeSpan.FromSeconds(options.RetryStep));
         }
 
-        return frame;
+        if (best == null)
+        {
+            return null;
+        }
+
+        ConsoleOutput.Verbose(
+            $"  no candidate passed after {options.Retries} attempts; keeping {bestTimestamp:hh\\:mm\\:ss}");
+
+        return new FrameSelection(best, bestTimestamp, bestAnalysis, true);
+    }
+
+    /// <summary>
+    /// Looks forward from <paramref name="timestamp"/> for the start of a new shot.
+    /// </summary>
+    /// <remarks>
+    /// Samples the window at <c>--retry-step</c> intervals and returns the sample that differs
+    /// most from the one before it, provided the difference clears
+    /// <see cref="SceneChangeMinDistance"/>. Falling on a hard cut is what makes a contact sheet
+    /// look representative rather than arbitrary. Costs one decode per sample, so it pairs well
+    /// with <c>--fast</c>.
+    /// </remarks>
+    private static async Task<TimeSpan> FindSceneStartAsync(
+        FFmpegAutoGenVideoDecoder decoder,
+        TimeSpan timestamp,
+        ThumbnailOptions options)
+    {
+        var step = TimeSpan.FromSeconds(Math.Max(0.25, options.RetryStep));
+        var samples = Math.Max(2, (int)(options.SceneWindow / step.TotalSeconds));
+
+        ulong previous = 0;
+        var havePrevious = false;
+
+        var bestTimestamp = timestamp;
+        var bestDistance = 0;
+
+        for (var i = 0; i < samples; i++)
+        {
+            var at = timestamp.Add(step * i);
+
+            using var frame = await DecodeAsync(decoder, at, options);
+            if (frame == null)
+            {
+                break;
+            }
+
+            var fingerprint = ContentDetectionService.Analyse(frame, AnalysisNeeds.Fingerprint).Fingerprint;
+
+            if (havePrevious)
+            {
+                var distance = ContentDetectionService.FingerprintDistance(previous, fingerprint);
+                if (distance > bestDistance)
+                {
+                    bestDistance = distance;
+                    bestTimestamp = at;
+                }
+            }
+
+            previous = fingerprint;
+            havePrevious = true;
+        }
+
+        if (bestDistance >= SceneChangeMinDistance)
+        {
+            ConsoleOutput.Verbose(
+                $"  scene change {bestDistance}/64 found at {bestTimestamp:hh\\:mm\\:ss} (target {timestamp:hh\\:mm\\:ss})");
+            return bestTimestamp;
+        }
+
+        ConsoleOutput.Verbose($"  no scene change within {options.SceneWindow:F0}s of {timestamp:hh\\:mm\\:ss}");
+        return timestamp;
+    }
+
+    /// <summary>Fingerprint distance, out of 64, that counts as a shot boundary.</summary>
+    private const int SceneChangeMinDistance = 12;
+
+    private static async Task<RgbaImage?> DecodeAsync(
+        FFmpegAutoGenVideoDecoder decoder, TimeSpan at, ThumbnailOptions options)
+    {
+        try
+        {
+            return await Task.Run(() => decoder.SeekAndExtractFrame(at, options.Fast));
+        }
+        catch (Exception ex)
+        {
+            ConsoleOutput.Verbose($"  {at:hh\\:mm\\:ss} failed to decode: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Scores a candidate against frames already chosen: below 1.0 when it is a near-duplicate,
+    /// scaled by how similar so the least-duplicated candidate still wins a fallback.
+    /// </summary>
+    private static double DuplicateRatio(
+        ulong fingerprint, IReadOnlyList<ulong> chosen, ThumbnailOptions options)
+    {
+        if (options.DedupeThreshold <= 0)
+        {
+            return double.PositiveInfinity;
+        }
+
+        var nearest = int.MaxValue;
+        foreach (var other in chosen)
+        {
+            nearest = Math.Min(nearest, ContentDetectionService.FingerprintDistance(fingerprint, other));
+        }
+
+        return nearest >= options.DedupeThreshold
+            ? double.PositiveInfinity
+            : nearest / (double)options.DedupeThreshold;
+    }
+
+    private static string DescribeRejection(
+        FrameAnalysis analysis, ThumbnailOptions options, IReadOnlyList<ulong> chosen)
+    {
+        if (options.Dedupe && chosen.Count > 0 &&
+            DuplicateRatio(analysis.Fingerprint, chosen, options) < 1.0)
+        {
+            return "near-duplicate of a frame already chosen";
+        }
+
+        return ContentDetectionService.DescribeRejection(analysis, options);
     }
 }

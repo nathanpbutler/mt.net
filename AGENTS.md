@@ -224,7 +224,8 @@ dotnet run -- --help     # Show all options
 
 - ✅ GetVideoMetadataAsync() - Extract metadata using FFmpeg.AutoGen
 - ✅ CalculateTimestamps() - Calculate timestamps based on numCaps, interval, from, to, skipCredits
-- ✅ ExtractFrameWithRetriesAsync() - Extract one frame with retry logic for content detection.
+- ✅ SelectFrameAsync() - Chooses the frame for one grid position: optional scene search, then
+  `--retries` attempts spaced `--retry-step` apart, falling back to the best candidate seen.
   Takes an already-open decoder; the caller opens one per file. v2 constructed a new decoder per
   frame, and its unused batch method has been removed.
 - ✅ **Fast seeking support** - Fully implemented using FFmpeg.AutoGen with direct libavcodec control
@@ -266,9 +267,12 @@ Supporting services:
 
 [Services/ContentDetectionService.cs](Services/ContentDetectionService.cs) - Frame quality analysis:
 
-- ✅ IsBlankFrame() - Histogram analysis with configurable threshold
-- ✅ IsBlurryFrame() - Laplacian variance for blur detection
-- ✅ IsSafeForWork() - Experimental skin tone detection
+- ✅ Analyse() - One pass over a downscaled copy producing every metric the options need
+  (`AnalysisNeeds` controls which are computed)
+- ✅ AcceptanceRatio() - Comparable headroom across all checks; >= 1.0 accepts, and the value
+  ranks rejects so exhaustion can keep the least-bad candidate
+- ✅ BlankCutoff() / BlurCutoff() - Threshold-to-cutoff mappings, linear and logarithmic
+- ✅ FingerprintDistance() - Average-hash comparison behind `--dedupe` and `--scene-detect`
 
 #### ✅ Output Management (OutputService.cs)
 
@@ -390,9 +394,24 @@ warns when text cannot be rendered instead of silently omitting it.
 
 Frame quality analysis uses specific thresholds:
 
-- **Blank detection**: Histogram analysis with configurable threshold (default: 85)
-- **Blur detection**: Laplacian variance (default: 62)
-- **Retry logic**: Up to 3 attempts to find suitable frames
+All metrics come from one `ContentDetectionService.Analyse` call per candidate, computed on a
+copy downscaled to `DetectionMaxEdge` (480px). One analysis serves the accept/reject decision,
+the ranking of rejects, and `--dedupe`.
+
+- **Blank detection**: luma standard deviation below a cutoff derived linearly from
+  `--blank-threshold` (default 50 -> 38.25)
+- **Blur detection**: variance of the Laplacian below a cutoff derived *logarithmically* from
+  `--blur-threshold` (default 60 -> ~122). The metric spans roughly 6 to 6500, so v2's linear
+  `threshold * 2` mapping only reached the bottom 3% of it
+- **Polarity**: both thresholds read 0 = never skip, 100 = most aggressive. v2 had them
+  inverted relative to each other, and `--blank-threshold 50` rejected every frame of ordinary
+  video, failing the run
+- **Retry logic**: `--retries` attempts spaced `--retry-step` seconds apart. `AcceptanceRatio`
+  gives every check a comparable headroom number so exhaustion keeps the least-bad candidate
+  rather than dropping the thumbnail
+- **Deduplication**: 8x8 average hash compared by Hamming distance
+- **Scene detection**: samples the window ahead and takes the largest fingerprint jump when it
+  clears `SceneChangeMinDistance`
 
 ## Testing Strategy & Edge Cases
 
@@ -557,4 +576,4 @@ Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`
 - **Resource Management**: Images are properly disposed after processing
 - **Error Handling**: Try-catch blocks with user-friendly error messages
 - **Progress Reporting**: Console output during long-running operations
-- **Retry Logic**: Frame extraction retries up to 3 times for content detection
+- **Retry Logic**: `--retries` attempts per frame, then the best candidate is kept rather than dropped
