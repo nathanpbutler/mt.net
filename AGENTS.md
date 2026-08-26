@@ -399,13 +399,16 @@ copy downscaled to `DetectionMaxEdge` (480px). One analysis serves the accept/re
 the ranking of rejects, and `--dedupe`.
 
 - **Blank detection**: luma standard deviation below a cutoff derived linearly from
-  `--blank-threshold` (default 50 -> 38.25)
+  `--blank-sensitivity` (default 50 -> 38.25)
 - **Blur detection**: variance of the Laplacian below a cutoff derived *logarithmically* from
-  `--blur-threshold` (default 60 -> ~122). The metric spans roughly 6 to 6500, so v2's linear
+  `--blur-sensitivity` (default 60 -> ~122). The metric spans roughly 6 to 6500, so v2's linear
   `threshold * 2` mapping only reached the bottom 3% of it
-- **Polarity**: both thresholds read 0 = never skip, 100 = most aggressive. v2 had them
-  inverted relative to each other, and `--blank-threshold 50` rejected every frame of ordinary
-  video, failing the run
+- **Polarity**: both read 0 = never skip, 100 = most aggressive. v2's `--blank-threshold` and
+  `--blur-threshold` ran in opposite directions to each other, and `--blank-threshold 50`
+  rejected every frame of ordinary video, failing the run. Those names are retired rather than
+  aliased — see `DescribeRetiredThresholds` in RootCommand.cs and the
+  `TranslateLegacy*Threshold` helpers, which are verified against the old build in both
+  directions. Do not quietly re-add them as aliases
 - **Retry logic**: `--retries` attempts spaced `--retry-step` seconds apart. `AcceptanceRatio`
   gives every check a comparable headroom number so exhaustion keeps the least-bad candidate
   rather than dropping the thumbnail

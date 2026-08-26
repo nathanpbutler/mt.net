@@ -236,17 +236,25 @@ public static class RootCommandBuilder
             Description = "Use content filtering for safe-for-work output (experimental)"
         };
 
-        var blurThresholdOption = new Option<int>("--blur-threshold")
+        var blurSensitivityOption = new Option<int>("--blur-sensitivity")
         {
-            Description = "Blur detection aggressiveness: 0 never skips, 100 skips most",
+            Description = "How readily frames are judged blurry: 0 never skips, 100 skips most",
             DefaultValueFactory = _ => 60
         };
 
-        var blankThresholdOption = new Option<int>("--blank-threshold")
+        var blankSensitivityOption = new Option<int>("--blank-sensitivity")
         {
-            Description = "Blank detection aggressiveness: 0 never skips, 100 skips most",
+            Description = "How readily frames are judged blank: 0 never skips, 100 skips most",
             DefaultValueFactory = _ => 50
         };
+
+        // Retired in v3. These parse only so that an old command line fails with an explanation
+        // and the equivalent value, rather than silently running with the opposite meaning:
+        // v2's scales ran in opposite directions to each other, and --blank-threshold in
+        // particular was stricter as the number got smaller. Nullable with no default so that
+        // "was it passed?" is answerable.
+        var legacyBlurThresholdOption = new Option<int?>("--blur-threshold") { Hidden = true };
+        var legacyBlankThresholdOption = new Option<int?>("--blank-threshold") { Hidden = true };
 
         var retriesOption = new Option<int>("--retries")
         {
@@ -416,8 +424,10 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(skipBlurryOption);
         rootCommand.Options.Add(fastOption);
         rootCommand.Options.Add(sfwOption);
-        rootCommand.Options.Add(blurThresholdOption);
-        rootCommand.Options.Add(blankThresholdOption);
+        rootCommand.Options.Add(blurSensitivityOption);
+        rootCommand.Options.Add(blankSensitivityOption);
+        rootCommand.Options.Add(legacyBlurThresholdOption);
+        rootCommand.Options.Add(legacyBlankThresholdOption);
         rootCommand.Options.Add(retriesOption);
         rootCommand.Options.Add(retryStepOption);
         rootCommand.Options.Add(dedupeOption);
@@ -452,6 +462,16 @@ public static class RootCommandBuilder
             {
                 ShowAvailableFilters();
                 return 0;
+            }
+
+            var retired = DescribeRetiredThresholds(
+                parseResult.GetValue(legacyBlankThresholdOption),
+                parseResult.GetValue(legacyBlurThresholdOption));
+
+            if (retired != null)
+            {
+                ConsoleOutput.Error(retired);
+                return 1;
             }
 
             // Build comprehensive options object
@@ -500,8 +520,8 @@ public static class RootCommandBuilder
                 SkipBlurry = parseResult.GetValue(skipBlurryOption),
                 Fast = parseResult.GetValue(fastOption),
                 Sfw = parseResult.GetValue(sfwOption),
-                BlurThreshold = parseResult.GetValue(blurThresholdOption),
-                BlankThreshold = parseResult.GetValue(blankThresholdOption),
+                BlurThreshold = parseResult.GetValue(blurSensitivityOption),
+                BlankThreshold = parseResult.GetValue(blankSensitivityOption),
                 Retries = parseResult.GetValue(retriesOption),
                 RetryStep = parseResult.GetValue(retryStepOption),
                 Dedupe = parseResult.GetValue(dedupeOption),
@@ -818,6 +838,58 @@ public static class RootCommandBuilder
                 videoPath, true, [outputPath], vttPath, frames.Count,
                 JsonVideoMetadata.From(headerInfo), JsonSheetLayout.From(layout), null);
         }
+    }
+
+    /// <summary>
+    /// Explains the retired <c>--blank-threshold</c>/<c>--blur-threshold</c> options, or null
+    /// when neither was used.
+    /// </summary>
+    /// <remarks>
+    /// These could have been kept as aliases, but their v2 meaning is not merely rescaled — it is
+    /// reversed for blank and compressed for blur. A command line carrying an old value would
+    /// still run and quietly do close to the opposite thing, which is the failure mode this
+    /// release exists to remove. Failing with the equivalent value costs one edit and no
+    /// surprises.
+    /// </remarks>
+    private static string? DescribeRetiredThresholds(int? legacyBlank, int? legacyBlur)
+    {
+        if (legacyBlank == null && legacyBlur == null)
+        {
+            return null;
+        }
+
+        var lines = new List<string>();
+
+        if (legacyBlank != null)
+        {
+            var replacement = ContentDetectionService.TranslateLegacyBlankThreshold(legacyBlank.Value);
+            lines.Add($"  --blank-threshold {legacyBlank}  ->  --blank-sensitivity {replacement}");
+
+            if (legacyBlank <= 50)
+            {
+                lines.Add($"      (--blank-threshold {legacyBlank} rejected every frame of ordinary video in v2;" +
+                          " 100 is the closest honest equivalent)");
+            }
+        }
+
+        if (legacyBlur != null)
+        {
+            var replacement = ContentDetectionService.TranslateLegacyBlurThreshold(legacyBlur.Value);
+            lines.Add($"  --blur-threshold {legacyBlur}  ->  --blur-sensitivity {replacement}");
+        }
+
+        return string.Join(Environment.NewLine,
+        [
+            "Error: --blank-threshold and --blur-threshold were retired in v3.",
+            "",
+            "They were replaced rather than rescaled because their meaning changed direction:",
+            "v2's blank scale ran backwards (a smaller number was stricter) and its blur scale",
+            "covered only a fraction of the useful range. Both --*-sensitivity options now read",
+            "the same way round: 0 never skips, 100 skips most.",
+            "",
+            "Equivalent for this command line:",
+            .. lines,
+        ]);
     }
 
     private static void ShowAvailableFilters()

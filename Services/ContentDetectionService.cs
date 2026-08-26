@@ -99,6 +99,36 @@ public static class ContentDetectionService
         return t == 0 ? 0.0 : Math.Pow(MaxBlurCutoff, t / 100.0);
     }
 
+    /// <summary>
+    /// Converts a v2-era <c>--blank-threshold</c> into the equivalent
+    /// <c>--blank-sensitivity</c>, for the message shown when the retired name is used.
+    /// </summary>
+    /// <remarks>
+    /// v2 compared the luma spread against <c>255 * (100 - t) / 100</c>, so its scale ran
+    /// backwards. Values at or below 50 produced a cutoff no real frame could clear and are
+    /// reported as 100 here, since the nearest honest equivalent is "maximally aggressive".
+    /// </remarks>
+    public static int TranslateLegacyBlankThreshold(int legacy)
+    {
+        var cutoff = 255.0 * (100 - Math.Clamp(legacy, 0, 100)) / 100.0;
+        return (int)Math.Round(Math.Clamp(cutoff / MaxBlankCutoff * 100.0, 0, 100));
+    }
+
+    /// <summary>
+    /// Converts a v2-era <c>--blur-threshold</c> into the equivalent <c>--blur-sensitivity</c>.
+    /// </summary>
+    /// <remarks>v2 compared the Laplacian variance against <c>t * 2</c>.</remarks>
+    public static int TranslateLegacyBlurThreshold(int legacy)
+    {
+        var cutoff = Math.Clamp(legacy, 0, 100) * 2.0;
+        if (cutoff <= 1.0)
+        {
+            return 0;
+        }
+
+        return (int)Math.Round(Math.Clamp(100.0 * Math.Log(cutoff) / Math.Log(MaxBlurCutoff), 0, 100));
+    }
+
     /// <summary>Works out which metrics the given options require.</summary>
     public static AnalysisNeeds NeedsFor(ThumbnailOptions options)
     {

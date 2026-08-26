@@ -133,8 +133,8 @@ mt ./videos --recursive --quiet --json
 - `-b, --skip-blank`: Skip blank frames
 - `--skip-blurry`: Skip blurry frames
 - `--sfw`: Content filtering for safe-for-work output (experimental)
-- `--blank-threshold`: Blank detection aggressiveness, 0-100 (default: 50)
-- `--blur-threshold`: Blur detection aggressiveness, 0-100 (default: 60)
+- `--blank-sensitivity`: How readily frames are judged blank, 0-100 (default: 50)
+- `--blur-sensitivity`: How readily frames are judged blurry, 0-100 (default: 60)
 - `--retries`: Attempts before keeping the best candidate (default: 3)
 - `--retry-step`: Seconds to advance between attempts (default: 1.0)
 - `--dedupe`: Skip frames that look like ones already chosen
@@ -143,9 +143,22 @@ mt ./videos --recursive --quiet --json
 - `--scene-window`: Seconds to search forward for a scene change (default: 5.0)
 - `--fast`: Fast but less accurate seeking
 
-For both thresholds, **0 never skips and 100 skips most** — they read the same way round. If no
-candidate passes within `--retries` attempts, mt keeps the best one it saw, so `--numcaps N`
+For both sensitivities, **0 never skips and 100 skips most** — they read the same way round. If
+no candidate passes within `--retries` attempts, mt keeps the best one it saw, so `--numcaps N`
 always produces N thumbnails.
+
+> **Renamed from `--blank-threshold` / `--blur-threshold`.** The old options did not merely use a
+> different scale — `--blank-threshold` was *stricter as the number got smaller*, the reverse of
+> `--blur-threshold`. Keeping the names would have let an existing command line run and quietly
+> do close to the opposite thing. The old names are therefore rejected with the equivalent value
+> for your exact command line:
+>
+> ```
+> $ mt video.mp4 --skip-blank --blank-threshold 95
+> Error: --blank-threshold and --blur-threshold were retired in v3.
+> ...
+>   --blank-threshold 95  ->  --blank-sensitivity 17
+> ```
 
 On long content the default 3-second search window is often too small to escape a dark scene;
 raise `--retries` or `--retry-step`. `--scene-detect` costs one extra decode per sample, so it
