@@ -1,18 +1,11 @@
 using FFmpeg.AutoGen.Abstractions;
 using nathanbutlerDEV.mt.net.Models;
+using nathanbutlerDEV.mt.net.Utilities;
 
 namespace nathanbutlerDEV.mt.net.Services;
 
 public class VideoProcessor
 {
-    /// <summary>
-    /// Supported video file extensions.
-    /// </summary>
-    public static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".mpeg", ".mpg", ".3gp"
-    };
-    
     /// <summary>
     /// Extracts metadata from the specified video file using FFmpeg.AutoGen.
     /// </summary>
@@ -126,9 +119,10 @@ public class VideoProcessor
     {
         var timestamps = new List<TimeSpan>();
 
-        // Parse from and to times
-        var fromTime = TimeSpan.Parse(options.From);
-        var endTime = options.End == "00:00:00" ? duration : TimeSpan.Parse(options.End);
+        // Parse from and to times. TimeSpanParser reports malformed input as an ArgumentException
+        // with the offending string; TimeSpan.Parse used to throw a bare FormatException from here.
+        var fromTime = TimeSpanParser.ParseTimeString(options.From);
+        var endTime = options.End == "00:00:00" ? duration : TimeSpanParser.ParseTimeString(options.End);
 
         // Handle skip credits - cut off last 2 minutes or 10% of duration
         if (options.SkipCredits)
@@ -143,6 +137,19 @@ public class VideoProcessor
         if (endTime > duration)
         {
             endTime = duration;
+        }
+
+        if (fromTime < TimeSpan.Zero)
+        {
+            fromTime = TimeSpan.Zero;
+        }
+
+        // An empty or inverted range yields a negative step and silently produces garbage
+        // timestamps, so say so instead.
+        if (fromTime >= endTime)
+        {
+            throw new ArgumentException(
+                $"Capture range is empty: --from {fromTime:hh\\:mm\\:ss} is not before the end of the range ({endTime:hh\\:mm\\:ss}).");
         }
 
         var workingDuration = endTime - fromTime;
@@ -186,50 +193,19 @@ public class VideoProcessor
         return timestamps;
     }
 
-    public static async Task<List<(RgbaImage Image, TimeSpan Timestamp)>> ExtractFramesAsync(
-        string videoPath,
-        List<TimeSpan> timestamps,
-        ThumbnailOptions options)
-    {
-        var frames = new List<(RgbaImage, TimeSpan)>();
-
-        // Use FFmpeg.AutoGen decoder for better control over seeking
-        using (var decoder = new FFmpegAutoGenVideoDecoder(videoPath))
-        {
-            foreach (var timestamp in timestamps)
-            {
-                var frame = await Task.Run(() => decoder.SeekAndExtractFrame(timestamp, options.Fast));
-                if (frame != null)
-                {
-                    frames.Add((frame, timestamp));
-                }
-            }
-        }
-
-        return frames;
-    }
-
-    private static async Task<RgbaImage?> ExtractFrameAtTimestampAsync(
-        string videoPath,
-        TimeSpan timestamp,
-        ThumbnailOptions options)
-    {
-        // This method is now a simple wrapper around the FFmpeg.AutoGen decoder
-        // It's kept for backward compatibility with the retry logic
-        try
-        {
-            using var decoder = new FFmpegAutoGenVideoDecoder(videoPath);
-            return await Task.Run(() => decoder.SeekAndExtractFrame(timestamp, options.Fast));
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error extracting frame at {timestamp}: {ex.Message}");
-            return null;
-        }
-    }
-
+    /// <summary>
+    /// Extracts one frame at <paramref name="timestamp"/>, stepping forward a second at a time
+    /// when the frame cannot be decoded or is rejected by <paramref name="skipCondition"/>.
+    /// </summary>
+    /// <remarks>
+    /// Takes an already-open decoder. Until v3 this opened a brand new
+    /// <see cref="FFmpegAutoGenVideoDecoder"/> for every frame, re-parsing the container once per
+    /// thumbnail; the caller now opens one per file and seeks within it, which is what
+    /// <c>SeekAndExtractFrame</c> was always built to support (it seeks and flushes the codec
+    /// buffers on entry, so repeated calls are independent).
+    /// </remarks>
     public static async Task<RgbaImage?> ExtractFrameWithRetriesAsync(
-        string videoPath,
+        FFmpegAutoGenVideoDecoder decoder,
         TimeSpan timestamp,
         ThumbnailOptions options,
         Func<RgbaImage, bool>? skipCondition = null,
@@ -237,23 +213,30 @@ public class VideoProcessor
     {
         RgbaImage? frame = null;
         var currentTimestamp = timestamp;
-        var retryCount = 0;
 
-        while (retryCount < maxRetries)
+        for (var attempt = 0; attempt < maxRetries; attempt++)
         {
-            frame = await ExtractFrameAtTimestampAsync(videoPath, currentTimestamp, options);
+            try
+            {
+                frame = await Task.Run(() => decoder.SeekAndExtractFrame(currentTimestamp, options.Fast));
+            }
+            catch (Exception ex)
+            {
+                ConsoleOutput.Verbose($"Frame at {currentTimestamp:hh\\:mm\\:ss} failed to decode: {ex.Message}");
+                frame = null;
+            }
 
             if (frame == null)
             {
-                retryCount++;
                 currentTimestamp = currentTimestamp.Add(TimeSpan.FromSeconds(1));
                 continue;
             }
 
             if (skipCondition != null && skipCondition(frame))
             {
+                ConsoleOutput.Verbose($"Frame at {currentTimestamp:hh\\:mm\\:ss} rejected by content detection; retrying.");
                 frame.Dispose();
-                retryCount++;
+                frame = null;
                 currentTimestamp = currentTimestamp.Add(TimeSpan.FromSeconds(1));
                 continue;
             }

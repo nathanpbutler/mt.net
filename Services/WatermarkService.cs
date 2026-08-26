@@ -1,4 +1,5 @@
 using nathanbutlerDEV.mt.net.Models;
+using nathanbutlerDEV.mt.net.Utilities;
 
 namespace nathanbutlerDEV.mt.net.Services;
 
@@ -26,7 +27,7 @@ public static class WatermarkService
             using var watermark = ImageLoader.Load(watermarkPath);
             if (watermark is null)
             {
-                Console.Error.WriteLine($"Error applying watermark: could not decode '{watermarkPath}'.");
+                ConsoleOutput.Error($"Error applying watermark: could not decode '{watermarkPath}'.");
                 return;
             }
 
@@ -37,7 +38,7 @@ public static class WatermarkService
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error applying watermark: {ex.Message}");
+            ConsoleOutput.Error($"Error applying watermark: {ex.Message}");
         }
     }
 }

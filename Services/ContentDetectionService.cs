@@ -180,29 +180,4 @@ public class ContentDetectionService
                r - Math.Min(g, b) > 15;
     }
 
-    public static RgbaImage? FindBestFrame(
-        List<RgbaImage> candidates,
-        bool skipBlank,
-        bool skipBlurry,
-        int blankThreshold = 85,
-        int blurThreshold = 62)
-    {
-        foreach (var candidate in candidates)
-        {
-            if (skipBlank && IsBlankFrame(candidate, blankThreshold))
-            {
-                continue;
-            }
-
-            if (skipBlurry && IsBlurryFrame(candidate, blurThreshold))
-            {
-                continue;
-            }
-
-            return candidate;
-        }
-
-        // If all frames are rejected, return the first one
-        return candidates.FirstOrDefault();
-    }
 }

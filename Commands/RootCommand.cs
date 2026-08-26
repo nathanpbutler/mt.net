@@ -1,7 +1,7 @@
 using System.CommandLine;
 using System.CommandLine.Completions;
 using System.CommandLine.Help;
-using System.CommandLine.Parsing;
+using System.Text.Json;
 using nathanbutlerDEV.mt.net.Models;
 using nathanbutlerDEV.mt.net.Services;
 using nathanbutlerDEV.mt.net.Utilities;
@@ -29,11 +29,12 @@ public static class RootCommandBuilder
             }
         }
 
-        // File argument (required) - the video file to process
-        var fileArgument = new Argument<FileInfo>("file")
+        // Input files. ZeroOrMore rather than ExactlyOne so that --filters works on its own
+        // and so a run can name several files, a directory, or a glob.
+        var filesArgument = new Argument<string[]>("files")
         {
-            Description = "Video file to process",
-            Arity = ArgumentArity.ExactlyOne
+            Description = "Video files, directories, or globs to process",
+            Arity = ArgumentArity.ZeroOrMore
         };
 
         // Basic Options
@@ -98,11 +99,6 @@ public static class RootCommandBuilder
             DefaultValueFactory = _ => "none"
         };
 
-        var v360Option = new Option<bool>("--v360")
-        {
-            Description = "Apply v360 filter for 360-degree VR video conversion (overrides width/height to 400x300)"
-        };
-
         var fontOption = new Option<string>("--font", ["-f"])
         {
             Description = "Font to use for timestamps and header",
@@ -139,9 +135,9 @@ public static class RootCommandBuilder
 
         var headerImageOption = new Option<string>("--header-image")
         {
-            Description = "Image to display in header"
+            Description = "Image to display on the right of the header"
         };
-        
+
         var bgContentOption = new Option<string>("--bg-content")
         {
             Description = "Background color for content area (R,G,B)",
@@ -169,7 +165,7 @@ public static class RootCommandBuilder
         // Watermark options
         var watermarkOption = new Option<string>("--watermark")
         {
-            Description = "Watermark image for center thumbnail"
+            Description = "Watermark image for the center thumbnail"
         };
 
         var watermarkAllOption = new Option<string>("--watermark-all")
@@ -181,6 +177,42 @@ public static class RootCommandBuilder
         {
             Description = "Comment to add to header",
             DefaultValueFactory = _ => "contactsheet created with mt.net (https://github.com/nathanpbutler/mt.net)"
+        };
+
+        // v360 (VR) Options
+        var v360Option = new Option<bool>("--v360")
+        {
+            Description = "Convert 360-degree VR footage to a flat projection"
+        };
+
+        var v360InputOption = new Option<string>("--v360-input")
+        {
+            Description = "v360 input projection (e.g. hequirect, equirect, dfisheye)",
+            DefaultValueFactory = _ => "hequirect"
+        };
+
+        var v360OutputOption = new Option<string>("--v360-output")
+        {
+            Description = "v360 output projection (e.g. flat, equirect)",
+            DefaultValueFactory = _ => "flat"
+        };
+
+        var v360StereoOption = new Option<string>("--v360-stereo")
+        {
+            Description = "v360 input stereo layout (sbs, tb, 2d)",
+            DefaultValueFactory = _ => "sbs"
+        };
+
+        var v360FovOption = new Option<int>("--v360-fov")
+        {
+            Description = "v360 diagonal field of view in degrees",
+            DefaultValueFactory = _ => 125
+        };
+
+        var v360PitchOption = new Option<int>("--v360-pitch")
+        {
+            Description = "v360 pitch adjustment in degrees",
+            DefaultValueFactory = _ => -25
         };
 
         // Processing Options
@@ -224,16 +256,29 @@ public static class RootCommandBuilder
 
         outputOption.CompletionSources.Add(ctx =>
         {
-            var file = ctx.ParseResult.GetValue(fileArgument); // Interesting...
-            if (file != null)
+            var files = ctx.ParseResult.GetValue(filesArgument);
+            var first = files?.FirstOrDefault();
+            if (!string.IsNullOrEmpty(first))
             {
-                var directory = file.DirectoryName ?? ".";
-                return [new CompletionItem(Path.Combine(directory, $"{Path.GetFileNameWithoutExtension(file.Name)}.jpg"))];
+                var directory = Path.GetDirectoryName(first) ?? ".";
+                return [new CompletionItem(Path.Combine(directory, $"{Path.GetFileNameWithoutExtension(first)}.jpg"))];
             }
             return [];
         });
 
         // Output Options
+        var formatOption = new Option<OutputFormat>("--format")
+        {
+            Description = "Output image format: auto (from extension), jpg, or png",
+            DefaultValueFactory = _ => OutputFormat.Auto
+        };
+
+        var qualityOption = new Option<int>("--quality", ["-q"])
+        {
+            Description = "JPEG quality (1-100); ignored for PNG",
+            DefaultValueFactory = _ => 90
+        };
+
         var singleImagesOption = new Option<bool>("--single-images", ["-s"])
         {
             Description = "Save individual images instead of contact sheet"
@@ -264,37 +309,10 @@ public static class RootCommandBuilder
             Description = "Do not apply input file's modified date to output files"
         };
 
-        // Configuration Options
-        var configOption = new Option<FileInfo>("--config")
+        // Input Options
+        var recursiveOption = new Option<bool>("--recursive", ["-r"])
         {
-            Description = "Configuration file path",
-            Arity = ArgumentArity.ExactlyOne
-        };
-        var saveConfigOption = new Option<string>("--save-config")
-        {
-            Description = "Save current settings to configuration file"
-        };
-
-        var configFileOption = new Option<string>("--config-file")
-        {
-            Description = "Use specific configuration file"
-        };
-
-        var showConfigOption = new Option<bool>("--show-config")
-        {
-            Description = "Show configuration file path and values, then exit"
-        };
-
-        // Upload Options
-        var uploadOption = new Option<bool>("--upload")
-        {
-            Description = "Upload generated files via HTTP"
-        };
-
-        var uploadUrlOption = new Option<string>("--upload-url")
-        {
-            Description = "URL for file upload",
-            DefaultValueFactory = _ => "http://example.com/upload"
+            Description = "Recurse into subdirectories when an input is a directory or glob"
         };
 
         // Global Options
@@ -303,13 +321,23 @@ public static class RootCommandBuilder
             Description = "Enable verbose logging"
         };
 
+        var quietOption = new Option<bool>("--quiet")
+        {
+            Description = "Suppress all output except errors"
+        };
+
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit a JSON summary to stdout instead of human-readable progress"
+        };
+
         var filtersOption = new Option<bool>("--filters")
         {
             Description = "List all available image filters"
         };
 
         // Add argument and all options to root command
-        rootCommand.Arguments.Add(fileArgument);
+        rootCommand.Arguments.Add(filesArgument);
 
         // Basic Options
         rootCommand.Options.Add(numCapsOption);
@@ -326,7 +354,6 @@ public static class RootCommandBuilder
 
         // Visual Options
         rootCommand.Options.Add(filterOption);
-        rootCommand.Options.Add(v360Option);
         rootCommand.Options.Add(fontOption);
         rootCommand.Options.Add(fontSizeOption);
         rootCommand.Options.Add(disableTimestampsOption);
@@ -342,6 +369,14 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(watermarkAllOption);
         rootCommand.Options.Add(commentOption);
 
+        // v360 Options
+        rootCommand.Options.Add(v360Option);
+        rootCommand.Options.Add(v360InputOption);
+        rootCommand.Options.Add(v360OutputOption);
+        rootCommand.Options.Add(v360StereoOption);
+        rootCommand.Options.Add(v360FovOption);
+        rootCommand.Options.Add(v360PitchOption);
+
         // Processing Options
         rootCommand.Options.Add(skipBlankOption);
         rootCommand.Options.Add(skipBlurryOption);
@@ -352,6 +387,8 @@ public static class RootCommandBuilder
 
         // Output Options
         rootCommand.Options.Add(outputOption);
+        rootCommand.Options.Add(formatOption);
+        rootCommand.Options.Add(qualityOption);
         rootCommand.Options.Add(singleImagesOption);
         rootCommand.Options.Add(overwriteOption);
         rootCommand.Options.Add(skipExistingOption);
@@ -359,36 +396,21 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(webVttOption);
         rootCommand.Options.Add(noMtimeOption);
 
-        // Configuration Options
-        rootCommand.Options.Add(configOption);
-        rootCommand.Options.Add(saveConfigOption);
-        rootCommand.Options.Add(configFileOption);
-        rootCommand.Options.Add(showConfigOption);
-
-        // Upload Options
-        rootCommand.Options.Add(uploadOption);
-        rootCommand.Options.Add(uploadUrlOption);
+        // Input Options
+        rootCommand.Options.Add(recursiveOption);
 
         // Global Options
         rootCommand.Options.Add(verboseOption);
+        rootCommand.Options.Add(quietOption);
+        rootCommand.Options.Add(jsonOption);
         rootCommand.Options.Add(filtersOption);
 
-        // Set the action for the root command (same logic as generate command)
         rootCommand.SetAction(async parseResult =>
         {
-            var file = parseResult.GetValue(fileArgument);
-
-            // Handle special actions first
+            // --filters is informational and takes no input, so answer it before anything else.
             if (parseResult.GetValue(filtersOption))
             {
                 ShowAvailableFilters();
-                return 0;
-            }
-
-            if (parseResult.GetValue(showConfigOption))
-            {
-                // TODO: Show configuration info
-                Console.WriteLine("Configuration display not yet implemented.");
                 return 0;
             }
 
@@ -410,7 +432,6 @@ public static class RootCommandBuilder
 
                 // Visual Options
                 Filter = parseResult.GetValue(filterOption)!,
-                V360 = parseResult.GetValue(v360Option),
                 FontPath = parseResult.GetValue(fontOption)!,
                 FontSize = parseResult.GetValue(fontSizeOption),
                 DisableTimestamps = parseResult.GetValue(disableTimestampsOption),
@@ -426,6 +447,14 @@ public static class RootCommandBuilder
                 WatermarkAll = parseResult.GetValue(watermarkAllOption) ?? "",
                 Comment = parseResult.GetValue(commentOption)!,
 
+                // v360 Options
+                V360 = parseResult.GetValue(v360Option),
+                V360Input = parseResult.GetValue(v360InputOption)!,
+                V360Output = parseResult.GetValue(v360OutputOption)!,
+                V360Stereo = parseResult.GetValue(v360StereoOption)!,
+                V360Fov = parseResult.GetValue(v360FovOption),
+                V360Pitch = parseResult.GetValue(v360PitchOption),
+
                 // Processing Options
                 SkipBlank = parseResult.GetValue(skipBlankOption),
                 SkipBlurry = parseResult.GetValue(skipBlurryOption),
@@ -436,6 +465,8 @@ public static class RootCommandBuilder
 
                 // Output Options
                 Filename = parseResult.GetValue(outputOption)!,
+                Format = parseResult.GetValue(formatOption),
+                Quality = parseResult.GetValue(qualityOption),
                 SingleImages = parseResult.GetValue(singleImagesOption),
                 Overwrite = parseResult.GetValue(overwriteOption),
                 SkipExisting = parseResult.GetValue(skipExistingOption),
@@ -443,9 +474,13 @@ public static class RootCommandBuilder
                 WebVtt = parseResult.GetValue(webVttOption),
                 NoMtime = parseResult.GetValue(noMtimeOption),
 
-                // Upload Options
-                Upload = parseResult.GetValue(uploadOption),
-                UploadUrl = parseResult.GetValue(uploadUrlOption)!
+                // Input Options
+                Recursive = parseResult.GetValue(recursiveOption),
+
+                // Global Options
+                Verbose = parseResult.GetValue(verboseOption),
+                Quiet = parseResult.GetValue(quietOption),
+                Json = parseResult.GetValue(jsonOption)
             };
 
             // Handle WebVTT special mode (mimics Go behavior at mt.go:441-447)
@@ -458,170 +493,275 @@ public static class RootCommandBuilder
                 options.Padding = 0;                   // No padding
             }
 
-            // Handle save config
-            var saveConfigPath = parseResult.GetValue(saveConfigOption);
-            if (!string.IsNullOrEmpty(saveConfigPath))
-            {
-                // TODO: Save configuration to file
-                Console.WriteLine($"Saving configuration to: {saveConfigPath}");
-            }
+            ConsoleOutput.JsonMode = options.Json;
+            ConsoleOutput.Level = options.Quiet ? OutputLevel.Quiet
+                : options.Verbose ? OutputLevel.Verbose
+                : OutputLevel.Normal;
 
-            if (file == null || !file.Exists)
+            // Catch incoherent combinations before decoding anything.
+            var validationError = options.Validate();
+            if (validationError != null)
             {
-                Console.Error.WriteLine("Error: Video file not found or not specified.");
+                ConsoleOutput.Error($"Error: {validationError}");
                 return 1;
             }
+
+            var inputs = parseResult.GetValue(filesArgument) ?? [];
+            if (inputs.Length == 0)
+            {
+                ConsoleOutput.Error("Error: no input files specified. Pass one or more video files, directories, or globs.");
+                return 1;
+            }
+
+            var resolved = InputResolver.Resolve(inputs, options.Recursive);
+            foreach (var problem in resolved.Problems)
+            {
+                ConsoleOutput.Error($"Warning: {problem}");
+            }
+
+            if (resolved.Files.Count == 0)
+            {
+                ConsoleOutput.Error("Error: no video files to process.");
+                return 1;
+            }
+
+            // A glob that matches nothing is a warning; a file the user named that isn't there
+            // is a mistake worth a non-zero exit, even though the other inputs still run.
+            var missingInputExitCode = resolved.HasMissingInput ? 1 : 0;
 
             try
             {
-                // Initialize FFmpeg libraries
-                FFmpegHelper.Initialize(parseResult.GetValue(verboseOption));
-
-                await ProcessVideoAsync(file.FullName, options);
-                return 0;
+                FFmpegHelper.Initialize(options.Verbose);
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Error processing video: {ex.Message}");
-                if (options.Verbose)
-                {
-                    Console.Error.WriteLine(ex.StackTrace);
-                }
+                ConsoleOutput.Error(ex.Message);
                 return 1;
             }
+
+            var exitCode = await ProcessAllAsync(resolved.Files, options);
+            return exitCode != 0 ? exitCode : missingInputExitCode;
         });
 
         return rootCommand;
     }
 
-    private static async Task ProcessVideoAsync(string videoPath, ThumbnailOptions options)
+    /// <summary>
+    /// Processes every resolved input, continuing past per-file failures.
+    /// </summary>
+    /// <returns>0 when every file succeeded, 1 if any failed.</returns>
+    private static async Task<int> ProcessAllAsync(IReadOnlyList<string> files, ThumbnailOptions options)
     {
-        Console.WriteLine($"Processing video: {videoPath}");
+        var results = new List<JsonFileResult>();
+        var failures = 0;
 
-        // Text is rendered with FFmpeg's drawtext filter, which is absent from builds
-        // compiled without libfreetype (notably Homebrew's stock ffmpeg formula).
-        // Warn rather than fail: a contact sheet without text is still useful.
+        // drawtext is absent from FFmpeg builds compiled without libfreetype (notably Homebrew's
+        // stock formula). Warn once for the whole run rather than once per file.
         if (options.Header || !options.DisableTimestamps)
         {
             FFmpegHelper.WarnIfDrawTextMissing();
         }
 
-        // Step 1: Extract video metadata
-        Console.WriteLine("Extracting video metadata...");
-        var headerInfo = await VideoProcessor.GetVideoMetadataAsync(videoPath);
-
-        // Step 2: Calculate timestamps
-        Console.WriteLine("Calculating timestamps...");
-        var timestamps = VideoProcessor.CalculateTimestamps(headerInfo.Duration, options);
-        Console.WriteLine($"Will extract {timestamps.Count} frames");
-
-        var timestampsCountLength = timestamps.Count.ToString().Length;
-
-        // Step 3: Extract frames with content detection
-        Console.WriteLine("Extracting frames...");
-        var frames = new List<(RgbaImage, TimeSpan)>();
-
-        for (int i = 0; i < timestamps.Count; i++)
+        for (int i = 0; i < files.Count; i++)
         {
-            var timestamp = timestamps[i];
-            // Pad frame number depending on total count (01 if <100, 001 if <1000, etc.)
-            var paddedFrameNumber = (i + 1).ToString().PadLeft(timestampsCountLength, '0');
-            Console.Write($"\rExtracting frame {paddedFrameNumber}/{timestamps.Count} at {timestamp:hh\\:mm\\:ss}...");
+            var file = files[i];
 
-            var frame = await VideoProcessor.ExtractFrameWithRetriesAsync(
-                videoPath,
-                timestamp,
-                options,
-                skipCondition: img =>
-                {
-                    if (options.SkipBlank && ContentDetectionService.IsBlankFrame(img, options.BlankThreshold))
-                        return true;
-                    if (options.SkipBlurry && ContentDetectionService.IsBlurryFrame(img, options.BlurThreshold))
-                        return true;
-                    if (options.Sfw && !ContentDetectionService.IsSafeForWork(img))
-                        return true;
-                    return false;
-                },
-                maxRetries: 3
-            );
-
-            if (frame != null)
+            if (files.Count > 1)
             {
-                frames.Add((frame, timestamp));
+                ConsoleOutput.Info($"[{i + 1}/{files.Count}] {file}");
+            }
+
+            try
+            {
+                results.Add(await ProcessVideoAsync(file, options));
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                ConsoleOutput.Error($"Error processing {file}: {ex.Message}");
+
+                if (options.Verbose)
+                {
+                    ConsoleOutput.Error(ex.StackTrace ?? "");
+                }
+
+                results.Add(new JsonFileResult(file, false, [], null, 0, null, null, ex.Message));
             }
         }
 
-        Console.WriteLine($"\nExtracted {frames.Count} frames");
-
-        if (frames.Count == 0)
+        if (options.Json)
         {
-            Console.Error.WriteLine("Error: No valid frames extracted from video");
-            return;
-        }
-
-        // Step 4: Create contact sheet or save individual images
-        // (image filters are applied per-frame inside the composer's filter graph)
-        if (options.SingleImages)
-        {
-            Console.WriteLine("Saving individual images...");
-            await OutputService.SaveIndividualImagesAsync(frames, videoPath, options);
+            Console.WriteLine(JsonSerializer.Serialize(
+                new JsonReport(results), JsonReportContext.Default.JsonReport));
         }
         else
         {
-            Console.WriteLine("Creating contact sheet...");
-
-            RgbaImage contactSheet;
-            using (var ffmpegComposer = new FFmpegFilterGraphComposer())
-            {
-                contactSheet = ffmpegComposer.CreateContactSheet(frames, headerInfo, options);
-            }
-
-            using (contactSheet)
-            {
-                // Apply watermarks if specified
-                if (!string.IsNullOrEmpty(options.Watermark))
-                {
-                    WatermarkService.ApplyWatermark(contactSheet, options.Watermark, center: true);
-                }
-
-                if (!string.IsNullOrEmpty(options.WatermarkAll))
-                {
-                    foreach (var (frame, _) in frames)
-                    {
-                        WatermarkService.ApplyWatermark(frame, options.WatermarkAll, center: false);
-                    }
-                }
-
-                Console.WriteLine("Saving contact sheet...");
-                var outputPath = await OutputService.SaveContactSheetAsync(contactSheet, videoPath, options);
-
-                // Step 6: Generate WebVTT if requested
-                if (options.Vtt || options.WebVtt)
-                {
-                    Console.WriteLine("Generating WebVTT file...");
-
-                    // Build VTT timestamps array with evenly-spaced intervals spanning full video
-                    // Unlike frame extraction timestamps (which use numCaps+1 to avoid the exact end),
-                    // VTT timestamps should span from 00:00:00 to video duration (matching Go mt.go:396)
-                    var vttTimestamps = new List<TimeSpan> { TimeSpan.Zero };
-                    var vttStep = headerInfo.Duration.TotalSeconds / frames.Count;
-                    for (int i = 1; i <= frames.Count; i++)
-                    {
-                        vttTimestamps.Add(TimeSpan.FromSeconds(vttStep * i));
-                    }
-
-                    await OutputService.GenerateWebVttAsync(frames, outputPath, videoPath, options, vttTimestamps);
-                }
-            }
+            ConsoleOutput.Info("Processing complete!");
         }
 
-        // Cleanup
-        foreach (var (frame, _) in frames)
+        return failures > 0 ? 1 : 0;
+    }
+
+    private static async Task<JsonFileResult> ProcessVideoAsync(string videoPath, ThumbnailOptions options)
+    {
+        ConsoleOutput.Info($"Processing video: {videoPath}");
+
+        // Step 1: Extract video metadata
+        ConsoleOutput.Info("Extracting video metadata...");
+        var headerInfo = await VideoProcessor.GetVideoMetadataAsync(videoPath);
+
+        // Step 2: Calculate timestamps
+        ConsoleOutput.Info("Calculating timestamps...");
+        var timestamps = VideoProcessor.CalculateTimestamps(headerInfo.Duration, options);
+        ConsoleOutput.Info($"Will extract {timestamps.Count} frames");
+
+        var timestampsCountLength = timestamps.Count.ToString().Length;
+
+        // Step 3: Extract frames with content detection.
+        // One decoder for the whole file: it seeks and flushes per call, and reopening the
+        // container per frame (as v2 did) was pure overhead.
+        ConsoleOutput.Info("Extracting frames...");
+        var frames = new List<(RgbaImage, TimeSpan)>();
+
+        using (var decoder = new FFmpegAutoGenVideoDecoder(videoPath))
         {
-            frame.Dispose();
+            for (int i = 0; i < timestamps.Count; i++)
+            {
+                var timestamp = timestamps[i];
+                // Pad frame number depending on total count (01 if <100, 001 if <1000, etc.)
+                var paddedFrameNumber = (i + 1).ToString().PadLeft(timestampsCountLength, '0');
+                ConsoleOutput.Progress(
+                    $"Extracting frame {paddedFrameNumber}/{timestamps.Count} at {timestamp:hh\\:mm\\:ss}...");
+
+                var frame = await VideoProcessor.ExtractFrameWithRetriesAsync(
+                    decoder,
+                    timestamp,
+                    options,
+                    skipCondition: img =>
+                    {
+                        if (options.SkipBlank && ContentDetectionService.IsBlankFrame(img, options.BlankThreshold))
+                            return true;
+                        if (options.SkipBlurry && ContentDetectionService.IsBlurryFrame(img, options.BlurThreshold))
+                            return true;
+                        if (options.Sfw && !ContentDetectionService.IsSafeForWork(img))
+                            return true;
+                        return false;
+                    },
+                    maxRetries: 3
+                );
+
+                if (frame != null)
+                {
+                    frames.Add((frame, timestamp));
+                }
+            }
         }
 
-        Console.WriteLine("Processing complete!");
+        ConsoleOutput.ClearProgress();
+        ConsoleOutput.Info($"Extracted {frames.Count} frames");
+
+        try
+        {
+            if (frames.Count == 0)
+            {
+                throw new InvalidOperationException("No valid frames could be extracted from the video.");
+            }
+
+            return options.SingleImages
+                ? await SaveSingleImagesAsync(frames, videoPath, headerInfo, options)
+                : await SaveContactSheetAsync(frames, videoPath, headerInfo, options);
+        }
+        finally
+        {
+            foreach (var (frame, _) in frames)
+            {
+                frame.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Renders each frame and writes it as its own image.
+    /// </summary>
+    /// <remarks>
+    /// v2 handed the raw decoded frames straight to the encoder, so <c>--single-images</c> ignored
+    /// every rendering option. Running <see cref="FFmpegFilterGraphComposer.ProcessFrames"/> here
+    /// gives this path the same scaling, filters, timestamps, border and watermarks as the sheet.
+    /// </remarks>
+    private static async Task<JsonFileResult> SaveSingleImagesAsync(
+        List<(RgbaImage Image, TimeSpan Timestamp)> frames,
+        string videoPath,
+        HeaderInfo headerInfo,
+        ThumbnailOptions options)
+    {
+        ConsoleOutput.Info("Rendering frames...");
+
+        List<(RgbaImage Image, TimeSpan Timestamp)> processed;
+        using (var composer = new FFmpegFilterGraphComposer())
+        {
+            processed = composer.ProcessFrames(frames, options);
+        }
+
+        try
+        {
+            ConsoleOutput.Info("Saving individual images...");
+            var paths = await OutputService.SaveIndividualImagesAsync(processed, videoPath, options);
+
+            return new JsonFileResult(
+                videoPath, true, paths, null, processed.Count,
+                JsonVideoMetadata.From(headerInfo), null, null);
+        }
+        finally
+        {
+            foreach (var (frame, _) in processed)
+            {
+                frame.Dispose();
+            }
+        }
+    }
+
+    private static async Task<JsonFileResult> SaveContactSheetAsync(
+        List<(RgbaImage Image, TimeSpan Timestamp)> frames,
+        string videoPath,
+        HeaderInfo headerInfo,
+        ThumbnailOptions options)
+    {
+        ConsoleOutput.Info("Creating contact sheet...");
+
+        RgbaImage contactSheet;
+        SheetLayout layout;
+        using (var composer = new FFmpegFilterGraphComposer())
+        {
+            (contactSheet, layout) = composer.CreateContactSheet(frames, headerInfo, options);
+        }
+
+        using (contactSheet)
+        {
+            ConsoleOutput.Info("Saving contact sheet...");
+            var outputPath = await OutputService.SaveContactSheetAsync(contactSheet, videoPath, options);
+
+            string? vttPath = null;
+            if (options.Vtt)
+            {
+                ConsoleOutput.Info("Generating WebVTT file...");
+
+                // VTT cues span the whole video, unlike the extraction timestamps which stop
+                // short of the end so the last frame stays decodable (matching Go mt.go:396).
+                var vttTimestamps = new List<TimeSpan> { TimeSpan.Zero };
+                var vttStep = headerInfo.Duration.TotalSeconds / frames.Count;
+                for (int i = 1; i <= frames.Count; i++)
+                {
+                    vttTimestamps.Add(TimeSpan.FromSeconds(vttStep * i));
+                }
+
+                vttPath = await OutputService.GenerateWebVttAsync(
+                    frames.Count, outputPath, videoPath, options, layout, vttTimestamps);
+            }
+
+            return new JsonFileResult(
+                videoPath, true, [outputPath], vttPath, frames.Count,
+                JsonVideoMetadata.From(headerInfo), JsonSheetLayout.From(layout), null);
+        }
     }
 
     private static void ShowAvailableFilters()

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
 using nathanbutlerDEV.mt.net.Models;
+using nathanbutlerDEV.mt.net.Utilities;
 
 namespace nathanbutlerDEV.mt.net.Services;
 
@@ -205,7 +206,7 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error extracting frame at {timestamp}: {ex.Message}");
+            ConsoleOutput.Verbose($"Error extracting frame at {timestamp}: {ex.Message}");
             return null;
         }
     }
@@ -263,7 +264,7 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error decoding first frame: {ex.Message}");
+            ConsoleOutput.Verbose($"Error decoding first frame: {ex.Message}");
             return null;
         }
     }

@@ -119,6 +119,14 @@ public static unsafe class ImageEncoder
                     encodeFrame->linesize);
             }
 
+            // With AV_CODEC_FLAG_QSCALE the MJPEG encoder reads the quantiser from the frame, not
+            // from the context, so global_quality alone was silently ignored and every JPEG came
+            // out at the encoder default regardless of the requested quality.
+            if (jpegQuality.HasValue)
+            {
+                encodeFrame->quality = codecContext->global_quality;
+            }
+
             ffmpeg.avcodec_send_frame(codecContext, encodeFrame).ThrowExceptionIfError();
             ffmpeg.avcodec_send_frame(codecContext, null).ThrowExceptionIfError();
 

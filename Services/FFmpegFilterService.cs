@@ -184,14 +184,14 @@ public sealed unsafe class FFmpegFilterService : IDisposable
             filterGraph = ffmpeg.avfilter_graph_alloc();
             if (filterGraph == null)
             {
-                Console.WriteLine("Failed to allocate filter graph");
+                ConsoleOutput.Verbose("Failed to allocate filter graph.");
                 return image;
             }
 
             // Build filter graph
             if (!CreateFilterGraph(filterGraph, &bufferSrcCtx, &bufferSinkCtx, image.Width, image.Height, filterSpec))
             {
-                Console.WriteLine($"Failed to create filter graph for: {filterSpec}");
+                ConsoleOutput.Error($"Could not apply image filter '{filterSpec}'; leaving the frame unfiltered.");
                 return image;
             }
 
@@ -204,7 +204,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
 
             if (ret < 0)
             {
-                Console.WriteLine($"Failed to get filtered frame: {ret}");
+                ConsoleOutput.Verbose($"Failed to get filtered frame: {ret}");
                 return image;
             }
 
@@ -213,7 +213,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error applying FFmpeg filter: {ex.Message}");
+            ConsoleOutput.Error($"Error applying image filter: {ex.Message}");
             return image;
         }
         finally

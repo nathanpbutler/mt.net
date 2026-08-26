@@ -12,8 +12,9 @@ This file provides guidance to AI coding agents when working with code in this r
 - Header with file metadata
 - Timestamps on thumbnails
 - Various filters and image processing options (greyscale, sepia, strip effects, etc.)
-- Upload functionality
+- Batch input: multiple files, directories, and globs
 - WebVTT generation for HTML5 video players
+- JSON reporting for scripting
 
 ### Reference Implementation
 
@@ -38,27 +39,31 @@ The application uses a stateless service pattern with clear separation of concer
 ### Processing Pipeline Flow
 
 ```csharp
-// Main pipeline in Commands/RootCommand.cs ProcessVideoAsync()
-Video Input → Extract Metadata → Calculate Timestamps → Extract Frames
-→ Apply Content Detection → Apply Filters → Create Contact Sheet
-→ Apply Watermarks → Save Output → Generate WebVTT
+// Commands/RootCommand.cs: ProcessAllAsync() loops inputs, ProcessVideoAsync() does one file
+Resolve Inputs (files/dirs/globs) → for each file:
+  Extract Metadata → Calculate Timestamps → Extract Frames (one decoder, reused)
+  → Apply Content Detection
+  → ProcessFrames (v360/scale → image filters → timestamp → border → watermarks)
+  → Compose Contact Sheet (returns SheetLayout)  ─or─  Save Individual Images
+  → Save Output → Generate WebVTT (from SheetLayout)
 ```
 
-### Configuration System
+### Options
 
-- **ThumbnailOptions** ([Models/ThumbnailOptions.cs](Models/ThumbnailOptions.cs)) - Single comprehensive options class with 40+ properties
+- **ThumbnailOptions** ([Models/ThumbnailOptions.cs](Models/ThumbnailOptions.cs)) - Single comprehensive options class, plus `Validate()` for combinations that parse but cannot be honoured
 - **System.CommandLine** - Direct CLI option mapping to ThumbnailOptions properties
 - **Pattern**: Each CLI option maps to a ThumbnailOptions property with default values and aliases
 
+There is no config-file or environment-variable layer. v3 removed one that had been built and
+then discarded on every run; do not reintroduce it without asking.
+
 ## Key Development Patterns
 
-### Temp Directory Workflow
+### Reference Material
 
-The `temp/` directory serves as temporary storage for current development work:
-
-- **Check temp/ first** - Before sourcing external documentation or code, check if it's already available in temp/
-- **Ask before sourcing** - If needed code/docs aren't in temp/, ask the user to source them before proceeding
-- **Current focus**: FFmpeg.AutoGen migration work is in `temp/FFmpeg.AutoGen/`
+`reference/original-mt/` is a git submodule holding the Go implementation; populate it with
+`git submodule update --init` when output compatibility is in question. The `temp/` directory, if
+present, is scratch space excluded from the build.
 
 ### Service Instantiation Pattern
 
@@ -194,23 +199,22 @@ dotnet run -- --help     # Show all options
 - **Dependencies**: All required NuGet packages added
   - System.CommandLine (CLI parsing)
   - ✅ **FFmpeg.AutoGen** (direct FFmpeg bindings for video processing) - Migration complete!
-  - Microsoft.Extensions.Configuration.* (config management)
-  - Serilog (logging)
+  - That is the whole dependency list. v3 removed the five
+    Microsoft.Extensions.Configuration.* packages and both Serilog packages along with the
+    config layer and the discarded logger they served.
 
-### ✅ Command-Line Interface Complete
+### ✅ Command-Line Interface
 
-- **100% Feature Parity**: All 40+ options from original Go implementation
-- **Direct File Interface**: `mt video.mp4 [options]` (matches original behavior)
-- **Comprehensive Options**: Basic, time, visual, processing, upload, WebVTT, configuration options
+- **Every option is wired**: v3 audited the surface and either implemented or removed each one.
+  Do not add an option without a code path that reads it.
+- **Batch Interface**: `mt video.mp4 [options]`, or several files, a directory, or a glob
 - **Help System**: Built-in help with descriptions, defaults, and examples
-- **Option Parsing**: Complete ThumbnailOptions object creation from CLI args
-- **✅ Bug Fix (Oct 2025)**: Resolved `-c` alias conflict between `--config` and `--columns` (removed `-c` from `--config`, kept it for `--columns` to match original mt behavior)
+- **Validation**: `ThumbnailOptions.Validate()` rejects incoherent combinations before decoding
 
-### ✅ Configuration System
+### ✅ Models and Utilities
 
-- **Models**: ThumbnailOptions, ImageFilter, HeaderInfo classes
-- **Configuration**: JSON config support with environment variables and CLI overrides
-- **Utilities**: Color parsing, time parsing, file validation helpers
+- **Models**: ThumbnailOptions, SheetLayout, JsonReport, HeaderInfo, RgbaImage
+- **Utilities**: Colour parsing, time parsing, input resolution, output verbosity routing
 
 ### ✅ Core Services Implementation Complete
 
@@ -220,8 +224,9 @@ dotnet run -- --help     # Show all options
 
 - ✅ GetVideoMetadataAsync() - Extract metadata using FFmpeg.AutoGen
 - ✅ CalculateTimestamps() - Calculate timestamps based on numCaps, interval, from, to, skipCredits
-- ✅ ExtractFramesAsync() - Extract frames at calculated timestamps
-- ✅ ExtractFrameWithRetriesAsync() - Extract frames with retry logic for content detection
+- ✅ ExtractFrameWithRetriesAsync() - Extract one frame with retry logic for content detection.
+  Takes an already-open decoder; the caller opens one per file. v2 constructed a new decoder per
+  frame, and its unused batch method has been removed.
 - ✅ **Fast seeking support** - Fully implemented using FFmpeg.AutoGen with direct libavcodec control
   - Migrated from FFMpegCore to FFmpeg.AutoGen for frame-level seeking behavior
   - `--fast` option now provides true keyframe-based seeking matching original Go implementation
@@ -264,7 +269,6 @@ Supporting services:
 - ✅ IsBlankFrame() - Histogram analysis with configurable threshold
 - ✅ IsBlurryFrame() - Laplacian variance for blur detection
 - ✅ IsSafeForWork() - Experimental skin tone detection
-- ✅ FindBestFrame() - Select best frame from candidates
 
 #### ✅ Output Management (OutputService.cs)
 
@@ -274,10 +278,11 @@ Supporting services:
   - Applies input file's modified date to output by default (unless `--no-mtime` is specified)
 - ✅ SaveIndividualImagesAsync() - Save individual thumbnail images
   - Applies input file's modified date to each output image by default (unless `--no-mtime` is specified)
-- ✅ GenerateWebVttAsync() - Generate WebVTT files with cue points (**Full feature parity with Go implementation**)
+- ✅ GenerateWebVttAsync() - Generate WebVTT files with cue points
   - Takes pre-calculated VTT timestamps array (evenly-spaced intervals from 00:00:00 to video duration)
-  - Calculates header height for Y-coordinate offset (note: diverges from FFmpegFilterGraphComposer.CalculateHeaderHeight - known bug)
-  - Includes padding in X/Y coordinate calculations: `(col * width) + (padding * col) + padding`
+  - Takes the `SheetLayout` the sheet was composed with; it no longer computes geometry itself
+    (v2's separate formula desynced every cue by ~25px — see SheetLayout's remarks)
+  - Timestamps use `TotalHours`, so videos past 24h do not wrap
   - Generates xywh coordinates for HTML5 video player sprite sheet navigation
   - Each cue maps timestamp range to thumbnail region in contact sheet
   - Applies input file's modified date to VTT file by default (unless `--no-mtime` is specified)
@@ -285,15 +290,6 @@ Supporting services:
 - ✅ GetNextAvailablePath() - Automatic filename incrementing with -01, -02, etc. suffix (matches Go implementation)
 - ✅ File handling logic - Overwrite/skip-existing/auto-increment behavior matching original mt
 - ✅ Modified time preservation - Applies input file's mtime to all outputs by default (disable with `--no-mtime`)
-
-#### ❌ Upload Service (UploadService.cs) **Priority: LOW**
-
-[Services/UploadService.cs](Services/UploadService.cs) - HTTP upload functionality (NOT YET IMPLEMENTED):
-
-- UploadFile(filePath, uploadUrl, options)
-- CreateMultipartFormData(file, metadata)
-- HandleUploadProgress(callback)
-- RetryUpload(file, maxRetries)
 
 ### ✅ Integration Complete
 
@@ -311,7 +307,7 @@ Supporting services:
 8. ✅ Save output using OutputService
 9. ✅ Generate WebVTT if requested
 10. ✅ Comprehensive error handling and progress reporting
-11. ❌ Upload files (not yet implemented)
+11. ✅ Per-file failures are reported and the batch continues
 
 #### ✅ Error Handling & Progress
 
@@ -319,13 +315,6 @@ Supporting services:
 - ✅ Console progress reporting during frame extraction
 - ✅ User-friendly error messages with optional verbose stack traces
 - ✅ Proper resource cleanup (image disposal)
-
-#### 🚧 Configuration Enhancements (Partial)
-
-- ❌ Save configuration to JSON files (--save-config) - placeholder only
-- ❌ Load custom configuration files (--config-file) - placeholder only
-- ❌ Show current configuration (--show-config) - placeholder only
-- ❌ Environment variable support with MT_ prefix - not yet implemented
 
 ## Implementation Status Summary
 
@@ -344,11 +333,10 @@ Supporting services:
 
 ### ✅ Phase 3: Advanced Features - MOSTLY COMPLETE
 
-1. ❌ **UploadService.cs** - HTTP upload functionality (not started)
-2. ✅ **WebVTT generation** - HTML5 video player support (complete)
-3. ❌ **Configuration management** - Save/load config files (placeholders only)
-4. ✅ **Fast seeking optimization** - Fully implemented with FFmpeg.AutoGen, 4x performance improvement
-5. ⏳ **Performance optimizations** - Further optimization possible to close ~40% gap with Go
+1. ✅ **WebVTT generation** - HTML5 video player support, offsets taken from `SheetLayout`
+2. ✅ **Fast seeking optimization** - FFmpeg.AutoGen with direct codec control
+3. ✅ **Decoder reuse** - one decoder per file rather than one per frame
+4. ⏳ **Performance optimizations** - further work possible to close the remaining gap with Go
 
 ## Critical Dependencies & Integration Points
 
@@ -481,12 +469,14 @@ All filters in `FilterService` implement consistent interfaces and support chain
 The `--v360` option applies FFmpeg's v360 filter for 360-degree VR video processing:
 
 - **Implementation**: Applied in `FFmpegFilterGraphComposer.BuildFrameFilterSpec()` during frame processing
-- **Filter specification**: `v360=input=hequirect:output=flat:in_stereo=sbs:out_stereo=2d:d_fov=125:w=400:h=300:pitch=-25`
-- **Input format**: Equirectangular 360° video with side-by-side stereo
-- **Output**: Flat 2D projection at 400x300 resolution
+- **Filter specification**: built from `--v360-input`, `--v360-output`, `--v360-stereo`, `--v360-fov`
+  and `--v360-pitch`; defaults reproduce v2's `hequirect`/`flat`/`sbs`/125/-25
+- **Sizing**: honours `--width`/`--height`. v2 hardcoded `w=400:h=300` while the grid was sized
+  from `--width`, so any non-default width left gaps. With `--height 0` the output falls back to
+  4:3, matching v2's default 400x300.
 - **Critical detail**: Must convert from YUV (v360 output) to RGBA format using `format=pix_fmts=rgba`
 - **Pipeline integration**: Replaces standard scale filter when enabled
-- **Example usage**: `mt vr-video.mp4 --v360`
+- **Example usage**: `mt vr-video.mp4 --v360 --v360-fov 100 --width 640`
 
 ### Color Parsing Convention
 
@@ -496,9 +486,8 @@ Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`
 
 ### When to Ask Before Sourcing
 
-- **Documentation/code not in temp/**: Ask user to source it first before looking externally
-- **FFmpeg.AutoGen examples**: Check `temp/FFmpeg.AutoGen/` before searching online
-- **API references**: Use temp/ directory content as primary source for current development
+- **Behavioural questions about the original**: check `reference/original-mt/` first
+- **FFmpeg.AutoGen usage**: prefer the existing call sites in `Services/` as the house style
 
 ### When to Proceed Independently
 
@@ -519,12 +508,11 @@ Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`
 
 1. ✅ **FFmpeg.AutoGen Migration** - COMPLETED - Achieved 4x performance improvement
 2. **Performance optimization** - Further optimize to close remaining ~40% gap with Go implementation
-3. **UploadService.cs** - Implement HTTP upload functionality
-4. **Configuration persistence** - Implement --save-config, --config-file, --show-config
-5. **Enhanced logging** - Integrate Serilog with configurable verbosity levels
-6. **Unit tests** - Add comprehensive test coverage
-7. **Documentation** - Add usage examples, troubleshooting guide
-8. **Code cleanup** - Remove legacy FFMpegCore references and dependencies
+3. **Unit tests** - the main outstanding v3 item. Cover the FFmpeg-free logic:
+   `CalculateTimestamps`, `BuildOutputPath`, `GetNextAvailablePath`, `SheetLayout` geometry,
+   WebVTT coordinates, `TimeSpanParser`, `ColorParser`, `InputResolver`. Keep these methods
+   static and dependency-free so they stay testable.
+4. **Documentation** - Add usage examples, troubleshooting guide
 
 ### Migration Status
 

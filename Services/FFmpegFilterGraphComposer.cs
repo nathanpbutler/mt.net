@@ -12,6 +12,19 @@ namespace nathanbutlerDEV.mt.net.Services;
 /// </summary>
 public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 {
+    /// <summary>Inset used for the header's text and for the right-aligned header image.</summary>
+    private const int HeaderMargin = 10;
+
+    /// <summary>
+    /// Resolved font paths, keyed by the requested font name.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="FindFontFile"/> recursively scans the system font directories, and it used to
+    /// run once per frame *and* once per header line. Resolving a font does not change while the
+    /// process runs, so cache it.
+    /// </remarks>
+    private static readonly Dictionary<string, string?> FontCache = [];
+
     // Service for applying image filters
     private readonly FFmpegFilterService _filterService;
     // Disposal flag
@@ -26,13 +39,58 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     }
 
     /// <summary>
+    /// Runs every frame through the rendering pipeline: v360 or scale, image filters, timestamp,
+    /// border and watermarks.
+    /// </summary>
+    /// <param name="frames">Source frames with their timestamps.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <returns>Newly allocated processed frames. The caller owns and must dispose them.</returns>
+    /// <remarks>
+    /// Public because <c>--single-images</c> needs it too. Until v3 this loop was buried inside
+    /// <see cref="CreateContactSheet"/>, so <c>-s</c> wrote raw full-resolution frames and
+    /// silently ignored <c>--filter</c>, <c>--width</c>, <c>--height</c>, <c>--border</c>,
+    /// <c>--font-size</c>, <c>--timestamp-opacity</c> and <c>--disable-timestamps</c>.
+    /// </remarks>
+    public List<(RgbaImage Image, TimeSpan Timestamp)> ProcessFrames(
+        List<(RgbaImage Image, TimeSpan Timestamp)> frames,
+        ThumbnailOptions options)
+    {
+        var processedFrames = new List<(RgbaImage Image, TimeSpan Timestamp)>();
+
+        try
+        {
+            for (int i = 0; i < frames.Count; i++)
+            {
+                var (frame, timestamp) = frames[i];
+                var isMiddleFrame = i == (frames.Count - 1) / 2;
+                processedFrames.Add((ProcessFrameWithFilters(frame, timestamp, options, isMiddleFrame), timestamp));
+            }
+
+            return processedFrames;
+        }
+        catch
+        {
+            // Don't leak the frames processed before the failure.
+            foreach (var (frame, _) in processedFrames)
+            {
+                frame?.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Creates a contact sheet from extracted frames using FFmpeg filter graphs.
     /// </summary>
     /// <param name="frames">List of frames with their timestamps.</param>
     /// <param name="headerInfo">Information for the header.</param>
     /// <param name="options">Thumbnail options.</param>
-    /// <returns>The composed contact sheet image.</returns>
-    public RgbaImage CreateContactSheet(
+    /// <returns>
+    /// The composed sheet and the geometry it was composed with. The layout is what WebVTT
+    /// generation reads, so its offsets always describe the image that was actually written.
+    /// </returns>
+    public (RgbaImage Sheet, SheetLayout Layout) CreateContactSheet(
         List<(RgbaImage Image, TimeSpan Timestamp)> frames,
         HeaderInfo headerInfo,
         ThumbnailOptions options)
@@ -42,31 +100,14 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             throw new ArgumentException("No frames provided for contact sheet");
         }
 
-        // TODO: Fully migrate to FFmpeg filter graphs for the entire contact sheet composition
-        // For now, we'll implement a hybrid approach:
-        // 1. Use FFmpeg filter graphs for individual frame processing (resize, text, filters)
-        // 2. Use basic composition for the final layout
-        // This allows incremental migration while maintaining functionality
-
-        var processedFrames = new List<(RgbaImage Image, TimeSpan Timestamp)>();
+        var processedFrames = ProcessFrames(frames, options);
 
         try
         {
-            // Process each frame through FFmpeg filters
-            for (int i = 0; i < frames.Count; i++)
-            {
-                var (frame, timestamp) = frames[i];
-                var isMiddleFrame = i == (frames.Count - 1) / 2;
-                var processedFrame = ProcessFrameWithFilters(frame, timestamp, options, isMiddleFrame);
-                processedFrames.Add((processedFrame, timestamp));
-            }
-
-            // Compose the final contact sheet
             return ComposeContactSheet(processedFrames, headerInfo, options);
         }
         finally
         {
-            // Clean up processed frames
             foreach (var (frame, _) in processedFrames)
             {
                 frame?.Dispose();
@@ -80,13 +121,15 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <param name="frame">The input frame to process.</param>
     /// <param name="timestamp">The timestamp of the frame.</param>
     /// <param name="options">Thumbnail options.</param>
-    /// <param name="isMiddleFrame">Indicates if this is the middle frame (for special watermarking).</param>
+    /// <param name="isMiddleFrame">
+    /// True for the centre thumbnail, which is where <c>--watermark</c> lands.
+    /// </param>
     /// <returns>The processed frame image.</returns>
     private RgbaImage ProcessFrameWithFilters(
         RgbaImage frame,
         TimeSpan timestamp,
         ThumbnailOptions options,
-        bool isMiddleFrame = false) // TODO: find way to use this
+        bool isMiddleFrame = false)
     {
         AVFilterGraph* filterGraph = null;
         AVFilterContext* bufferSrcCtx = null;
@@ -111,7 +154,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 
             if (!CreateFilterGraph(filterGraph, &bufferSrcCtx, &bufferSinkCtx, frame.Width, frame.Height, filterSpec))
             {
-                Console.WriteLine("Failed to create filter graph, using original frame");
+                ConsoleOutput.Error("Failed to build the frame filter graph; using the unprocessed frame.");
                 return frame.Clone();
             }
 
@@ -124,11 +167,10 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 
             if (ret < 0)
             {
-                Console.WriteLine($"Failed to get frame from filter: {ret}");
+                ConsoleOutput.Error($"Filter graph produced no frame (error {ret}); using the unprocessed frame.");
                 return frame.Clone();
             }
 
-            // Convert back to ImageSharp
             var processedFrame = AVFrameBridge.ToRgbaImage(outputFrame);
 
             // Apply image filters if specified
@@ -142,11 +184,13 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
                 }
             }
 
+            ApplyWatermarks(processedFrame, options, isMiddleFrame);
+
             return processedFrame;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error processing frame with filters: {ex.Message}");
+            ConsoleOutput.Error($"Error processing frame with filters: {ex.Message}");
             return frame.Clone();
         }
         finally
@@ -172,6 +216,30 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     }
 
     /// <summary>
+    /// Blends <c>--watermark-all</c> onto every thumbnail and <c>--watermark</c> onto the centre one.
+    /// </summary>
+    /// <remarks>
+    /// Both were broken before v3. <c>--watermark-all</c> ran in <c>ProcessVideoAsync</c> against
+    /// the *source* frames after the sheet had already been composed, so it never reached the
+    /// output and the frames were disposed without being re-saved. <c>--watermark</c> was blended
+    /// over the centre of the whole sheet rather than the centre thumbnail its help text promises.
+    /// Doing both here, per frame and before composition, makes them behave as documented and
+    /// carries them to <c>--single-images</c> as well.
+    /// </remarks>
+    private static void ApplyWatermarks(RgbaImage frame, ThumbnailOptions options, bool isMiddleFrame)
+    {
+        if (!string.IsNullOrEmpty(options.WatermarkAll))
+        {
+            WatermarkService.ApplyWatermark(frame, options.WatermarkAll, center: true);
+        }
+
+        if (isMiddleFrame && !string.IsNullOrEmpty(options.Watermark))
+        {
+            WatermarkService.ApplyWatermark(frame, options.Watermark, center: true);
+        }
+    }
+
+    /// <summary>
     /// Builds the filter specification string for frame processing.
     /// </summary>
     /// <param name="width">Original frame width.</param>
@@ -183,24 +251,43 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     {
         var filters = new List<string>();
 
-        // Add v360 filter if enabled (applies 360-to-flat transformation with built-in resizing)
+        // v360 handles projection conversion and resizing in one step; plain scaling otherwise.
+        // Either way the output honours --width/--height, which is new in v3: the v360 branch used
+        // to hardcode w=400:h=300 while the grid was laid out from options.Width/Height, so any
+        // --v360 run at a non-default size produced a misaligned sheet.
+        var targetWidth = options.Width;
+        int targetHeight;
+
+        if (options.Height > 0)
+        {
+            targetHeight = options.Height;
+        }
+        else if (options.V360)
+        {
+            // A flat projection has no meaningful source aspect to inherit, so fall back to the
+            // 4:3 that v2's hardcoded 400x300 produced. `mt vr.mp4 --v360` looks unchanged;
+            // `--width 640` now actually widens the output instead of being ignored.
+            targetHeight = targetWidth * 3 / 4;
+        }
+        else
+        {
+            targetHeight = (int)(height * (targetWidth / (double)width));
+        }
+
         if (options.V360)
         {
-            // v360 filter handles both projection conversion and resizing in one step
-            filters.Add("v360=input=hequirect:output=flat:in_stereo=sbs:out_stereo=2d:d_fov=125:w=400:h=300:pitch=-25");
-            // Convert from YUV (v360 output) to RGBA (expected by AVFrameToImage)
+            filters.Add(
+                $"v360=input={options.V360Input}:output={options.V360Output}" +
+                $":in_stereo={options.V360Stereo}:out_stereo=2d" +
+                $":d_fov={options.V360Fov}:pitch={options.V360Pitch}" +
+                $":w={targetWidth}:h={targetHeight}");
+
+            // v360 emits YUV; AVFrameBridge expects RGBA.
             filters.Add("format=pix_fmts=rgba");
         }
         else
         {
-            // Calculate target dimensions for regular scaling
-            var thumbnailWidth = options.Width;
-            var thumbnailHeight = options.Height > 0
-                ? options.Height
-                : (int)(height * (thumbnailWidth / (double)width));
-
-            // Scale filter (only when not using v360, as v360 includes resizing)
-            filters.Add($"scale={thumbnailWidth}:{thumbnailHeight}");
+            filters.Add($"scale={targetWidth}:{targetHeight}");
         }
 
         // Add timestamp if enabled
@@ -263,7 +350,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 
             if (bufferSrc == null || bufferSink == null)
             {
-                Console.WriteLine("Failed to find buffer filters");
+                ConsoleOutput.Verbose("Failed to find the buffer/buffersink filters.");
                 return false;
             }
 
@@ -272,7 +359,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             var ret = ffmpeg.avfilter_graph_create_filter(bufferSrcCtx, bufferSrc, "in", args, null, filterGraph);
             if (ret < 0)
             {
-                Console.WriteLine($"Failed to create buffer source: {ret}");
+                ConsoleOutput.Verbose($"Failed to create buffer source: {ret}");
                 return false;
             }
 
@@ -280,7 +367,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             ret = ffmpeg.avfilter_graph_create_filter(bufferSinkCtx, bufferSink, "out", null, null, filterGraph);
             if (ret < 0)
             {
-                Console.WriteLine($"Failed to create buffer sink: {ret}");
+                ConsoleOutput.Verbose($"Failed to create buffer sink: {ret}");
                 return false;
             }
 
@@ -305,7 +392,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 
             if (ret < 0)
             {
-                Console.WriteLine($"Failed to parse filter graph: {ret}");
+                ConsoleOutput.Verbose($"Failed to parse filter graph: {ret}");
                 return false;
             }
 
@@ -313,7 +400,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             ret = ffmpeg.avfilter_graph_config(filterGraph, null);
             if (ret < 0)
             {
-                Console.WriteLine($"Failed to configure filter graph: {ret}");
+                ConsoleOutput.Verbose($"Failed to configure filter graph: {ret}");
                 return false;
             }
 
@@ -321,7 +408,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Exception in CreateFilterGraph: {ex.Message}");
+            ConsoleOutput.Verbose($"Exception in CreateFilterGraph: {ex.Message}");
             return false;
         }
     }
@@ -343,64 +430,55 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <param name="frames">List of processed frames with timestamps.</param>
     /// <param name="headerInfo">Information for the header.</param>
     /// <param name="options">Thumbnail options.</param>
-    /// <returns>The composed contact sheet image.</returns>
-    private RgbaImage ComposeContactSheet(
+    /// <returns>The composed contact sheet and the geometry used to build it.</returns>
+    private (RgbaImage Sheet, SheetLayout Layout) ComposeContactSheet(
         List<(RgbaImage Image, TimeSpan Timestamp)> frames,
         HeaderInfo headerInfo,
         ThumbnailOptions options)
     {
-        // Calculate dimensions
-        var thumbnailWidth = options.Width;
-        var thumbnailHeight = options.Height > 0
-            ? options.Height
-            : (int)(frames[0].Image.Height * (thumbnailWidth / (double)frames[0].Image.Width));
+        // Measure the frames that were actually produced rather than re-deriving from options.
+        // --v360 and the aspect-preserving auto height both mean the rendered size can differ
+        // from what options alone would suggest; taking it from the frame keeps the grid, the
+        // canvas and the WebVTT offsets in agreement no matter what the filter chain did.
+        var thumbnailWidth = frames[0].Image.Width;
+        var thumbnailHeight = frames[0].Image.Height;
 
-        var columns = options.Columns;
+        var columns = Math.Min(options.Columns, frames.Count);
         var rows = (int)Math.Ceiling(frames.Count / (double)columns);
 
-        var padding = options.Padding;
+        // Header height is only known once the header is rendered, so build it first against the
+        // content width, then let the real image height define the layout.
+        var contentWidth = (columns * thumbnailWidth) + ((columns + 1) * options.Padding);
 
-        // Calculate canvas dimensions
-        var contentWidth = (columns * thumbnailWidth) + ((columns + 1) * padding);
-        var contentHeight = (rows * thumbnailHeight) + ((rows + 1) * padding);
-
-        // Calculate header height
-        var headerHeight = 0;
         RgbaImage? headerImage = null;
         if (options.Header)
         {
             headerImage = CreateHeaderWithFFmpeg(headerInfo, options, contentWidth);
-            headerHeight = headerImage?.Height ?? 0;
         }
 
-        var totalHeight = headerHeight + contentHeight;
+        var layout = new SheetLayout(
+            HeaderHeight: headerImage?.Height ?? 0,
+            ThumbnailWidth: thumbnailWidth,
+            ThumbnailHeight: thumbnailHeight,
+            Columns: columns,
+            Rows: rows,
+            Padding: options.Padding);
 
-        // Create canvas
-        var bgColor = ColorParser.ParseRgb(options.BgContent);
-        var canvas = new RgbaImage(contentWidth, totalHeight);
-        canvas.Fill(bgColor);
+        var canvas = new RgbaImage(layout.ContentWidth, layout.TotalHeight);
+        canvas.Fill(ColorParser.ParseRgb(options.BgContent));
 
-        // Draw header if created
         if (headerImage != null)
         {
             canvas.DrawImage(headerImage, 0, 0);
             headerImage.Dispose();
         }
 
-        // Compose thumbnails onto canvas
         for (int i = 0; i < frames.Count; i++)
         {
-            var (frame, _) = frames[i];
-            var row = i / columns;
-            var col = i % columns;
-
-            var x = padding + (col * (thumbnailWidth + padding));
-            var y = headerHeight + padding + (row * (thumbnailHeight + padding));
-
-            canvas.DrawImage(frame, x, y);
+            canvas.DrawImage(frames[i].Image, layout.ThumbnailX(i), layout.ThumbnailY(i));
         }
 
-        return canvas;
+        return (canvas, layout);
     }
 
     /// <summary>
@@ -412,18 +490,45 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <returns>The created header image, or null if creation failed.</returns>
     private RgbaImage? CreateHeaderWithFFmpeg(HeaderInfo headerInfo, ThumbnailOptions options, int width)
     {
+        RgbaImage? headerImage = null;
+
         try
         {
-            var height = CalculateHeaderHeight(headerInfo, options);
+            // --header-image was declared, bound to ThumbnailOptions.HeaderImage and then read by
+            // nothing at all until v3. Load it first so the header can be made tall enough for it.
+            if (!string.IsNullOrEmpty(options.HeaderImage))
+            {
+                headerImage = ImageLoader.Load(options.HeaderImage);
+                if (headerImage == null)
+                {
+                    ConsoleOutput.Error($"Could not decode --header-image '{options.HeaderImage}'; continuing without it.");
+                }
+            }
+
+            var height = CalculateHeaderHeight(options, headerImage?.Height ?? 0);
             var bgColor = ColorParser.ParseRgb(options.BgHeader);
             var fgColor = ColorParser.ParseRgb(options.FgHeader);
 
-            // Create blank header canvas
             var header = new RgbaImage(width, height);
             header.Fill(bgColor);
 
-            // Build header text lines
+            // Right-align the header image so it never lands under the left-aligned text.
+            if (headerImage != null)
+            {
+                var imageX = Math.Max(0, width - headerImage.Width - HeaderMargin);
+                var imageY = Math.Max(0, (height - headerImage.Height) / 2);
+                header.DrawImage(headerImage, imageX, imageY);
+            }
+
             var headerLines = BuildHeaderTextLines(headerInfo, options);
+            var filterSpec = BuildHeaderFilterSpec(headerLines, options, fgColor);
+
+            // No font, or an FFmpeg without drawtext: keep the header band anyway so
+            // --header-image and the background colour still appear.
+            if (string.IsNullOrEmpty(filterSpec))
+            {
+                return header;
+            }
 
             // Convert to AVFrame and apply text using drawtext filter
             var frame = AVFrameBridge.ToAVFrame(header);
@@ -431,8 +536,6 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 
             try
             {
-                var filterSpec = BuildHeaderFilterSpec(headerLines, options, fgColor);
-                
                 var processedFrame = ApplyFilterToFrame(frame, width, height, filterSpec);
 
                 if (processedFrame != null)
@@ -451,8 +554,12 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error creating header with FFmpeg: {ex.Message}");
+            ConsoleOutput.Error($"Error creating header with FFmpeg: {ex.Message}");
             return null;
+        }
+        finally
+        {
+            headerImage?.Dispose();
         }
     }
 
@@ -636,22 +743,24 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     }
 
     /// <summary>
-    /// Calculates the required header height based on content.
-    /// Balanced padding: 10px top + (lineHeight * numLines) + 10px bottom
-    /// Must account for DPI-scaled line height and font size.
+    /// Calculates the header height needed for the text lines, and for the header image if one
+    /// is taller than the text.
     /// </summary>
-    /// <param name="headerInfo">Information for the header.</param>
     /// <param name="options">Thumbnail options.</param>
+    /// <param name="headerImageHeight">Height of the <c>--header-image</c>, or 0 when absent.</param>
     /// <returns>The calculated header height in pixels.</returns>
-    private static int CalculateHeaderHeight(HeaderInfo headerInfo, ThumbnailOptions options)
+    /// <remarks>
+    /// This is the only place header height is computed. It used to be one of three competing
+    /// formulas — <c>OutputService</c> had its own un-DPI-scaled variant for WebVTT, and the
+    /// composer separately trusted the rendered image — which is what desynced the VTT offsets.
+    /// Everything downstream now reads <see cref="SheetLayout.HeaderHeight"/> instead.
+    /// </remarks>
+    private static int CalculateHeaderHeight(ThumbnailOptions options, int headerImageHeight)
     {
-        var fontSize = options.FontSize;
+        // Use DPI-scaled line height to match actual rendering (Go mt draws at 96 DPI,
+        // FFmpeg's drawtext defaults to 72).
+        var lineHeight = (int)((options.FontSize + 4) * 96.0 / 72.0);
 
-        // Use DPI-scaled line height to match actual rendering
-        var lineHeight = (int)((fontSize + 4) * 96.0 / 72.0);
-
-        // TODO: Calculate based on headerInfo content
-        // For now, assume fixed number of lines based on options
         var lines = 4; // File Name, File Size, Duration, Resolution
 
         if (options.HeaderMeta)
@@ -664,7 +773,11 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             lines += 1; // Comment line
         }
 
-        return lineHeight * lines + 5;
+        var textHeight = lineHeight * lines + 5;
+
+        return headerImageHeight > 0
+            ? Math.Max(textHeight, headerImageHeight + (HeaderMargin * 2))
+            : textHeight;
     }
 
     /// <summary>
@@ -674,6 +787,28 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <returns>The path to the font file, or null if not found.</returns>
     private static string? FindFontFile(string fontName)
     {
+        lock (FontCache)
+        {
+            if (FontCache.TryGetValue(fontName, out var cached))
+            {
+                return cached;
+            }
+
+            var resolved = ResolveFontFile(fontName);
+            FontCache[fontName] = resolved;
+            return resolved;
+        }
+    }
+
+    /// <summary>Scans the platform's font directories for <paramref name="fontName"/>.</summary>
+    private static string? ResolveFontFile(string fontName)
+    {
+        // A path to an actual font file should be taken at its word.
+        if (File.Exists(fontName))
+        {
+            return fontName;
+        }
+
         // Common font directories on different platforms
         var fontDirs = new List<string>();
 

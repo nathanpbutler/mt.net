@@ -38,7 +38,7 @@ public static class FFmpegHelper
 
                 if (verbose && !string.IsNullOrEmpty(libraryPath))
                 {
-                    Console.WriteLine($"FFmpeg library path set to: {libraryPath}");
+                    ConsoleOutput.Verbose($"FFmpeg library path set to: {libraryPath}");
                 }
 
                 DynamicallyLoadedBindings.Initialize();
@@ -55,13 +55,13 @@ public static class FFmpegHelper
                 {
                     unsafe
                     {
-                        Console.WriteLine($"FFmpeg initialized successfully: {ffmpeg.av_version_info()}");
-                        Console.WriteLine($"  libavcodec version:  {ffmpeg.avcodec_version()}");
-                        Console.WriteLine($"  libavformat version: {ffmpeg.avformat_version()}");
-                        Console.WriteLine($"  libavutil version:   {ffmpeg.avutil_version()}");
+                        ConsoleOutput.Verbose($"FFmpeg initialized successfully: {ffmpeg.av_version_info()}");
+                        ConsoleOutput.Verbose($"  libavcodec version:  {ffmpeg.avcodec_version()}");
+                        ConsoleOutput.Verbose($"  libavformat version: {ffmpeg.avformat_version()}");
+                        ConsoleOutput.Verbose($"  libavutil version:   {ffmpeg.avutil_version()}");
                     }
 
-                    Console.WriteLine($"  drawtext filter:     {(HasDrawText ? "available" : "MISSING")}");
+                    ConsoleOutput.Verbose($"  drawtext filter:     {(HasDrawText ? "available" : "MISSING")}");
                 }
             }
             catch (Exception ex)
@@ -101,31 +101,31 @@ public static class FFmpegHelper
 
         _drawTextWarningShown = true;
 
-        Console.Error.WriteLine();
-        Console.Error.WriteLine("WARNING: this FFmpeg build has no drawtext filter, so the header and");
-        Console.Error.WriteLine("         timestamps cannot be rendered. The contact sheet will be created");
-        Console.Error.WriteLine("         without any text.");
-        Console.Error.WriteLine();
-        Console.Error.WriteLine("         drawtext requires FFmpeg to be built with libfreetype.");
+        ConsoleOutput.Error(string.Empty);
+        ConsoleOutput.Error("WARNING: this FFmpeg build has no drawtext filter, so the header and");
+        ConsoleOutput.Error("         timestamps cannot be rendered. The contact sheet will be created");
+        ConsoleOutput.Error("         without any text.");
+        ConsoleOutput.Error(string.Empty);
+        ConsoleOutput.Error("         drawtext requires FFmpeg to be built with libfreetype.");
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            Console.Error.WriteLine("         Homebrew's stock ffmpeg formula is built without it. Install the");
-            Console.Error.WriteLine("         batteries-included build instead:");
-            Console.Error.WriteLine();
-            Console.Error.WriteLine("           brew install ffmpeg-full");
+            ConsoleOutput.Error("         Homebrew's stock ffmpeg formula is built without it. Install the");
+            ConsoleOutput.Error("         batteries-included build instead:");
+            ConsoleOutput.Error(string.Empty);
+            ConsoleOutput.Error("           brew install ffmpeg-full");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            Console.Error.WriteLine("         Install a distribution build with libfreetype enabled, or set");
-            Console.Error.WriteLine($"         {PathOverrideVariable} to a directory containing one.");
+            ConsoleOutput.Error("         Install a distribution build with libfreetype enabled, or set");
+            ConsoleOutput.Error($"         {PathOverrideVariable} to a directory containing one.");
         }
         else
         {
-            Console.Error.WriteLine("         Use a full build such as the gyan.dev full or essentials release.");
+            ConsoleOutput.Error("         Use a full build such as the gyan.dev full or essentials release.");
         }
 
-        Console.Error.WriteLine();
+        ConsoleOutput.Error(string.Empty);
     }
 
     private static string? SetFFmpegLibraryPath(bool verbose)
@@ -137,13 +137,13 @@ public static class FFmpegHelper
             if (Directory.Exists(overridePath))
             {
                 if (verbose)
-                    Console.WriteLine($"  Using {PathOverrideVariable}: {overridePath}");
+                    ConsoleOutput.Verbose($"  Using {PathOverrideVariable}: {overridePath}");
 
                 DynamicallyLoadedBindings.LibrariesPath = overridePath;
                 return overridePath;
             }
 
-            Console.Error.WriteLine($"WARNING: {PathOverrideVariable} is set to '{overridePath}', which does not exist. Ignoring.");
+            ConsoleOutput.Error($"WARNING: {PathOverrideVariable} is set to '{overridePath}', which does not exist. Ignoring.");
         }
 
         foreach (var path in GetSearchPaths())
@@ -151,7 +151,7 @@ public static class FFmpegHelper
             if (!Directory.Exists(path))
             {
                 if (verbose)
-                    Console.WriteLine($"  Skipping (not found): {path}");
+                    ConsoleOutput.Verbose($"  Skipping (not found): {path}");
                 continue;
             }
 
@@ -159,18 +159,18 @@ public static class FFmpegHelper
             if (foundLib is not null)
             {
                 if (verbose)
-                    Console.WriteLine($"  Found FFmpeg library: {foundLib}");
+                    ConsoleOutput.Verbose($"  Found FFmpeg library: {foundLib}");
 
                 DynamicallyLoadedBindings.LibrariesPath = path;
                 return path;
             }
 
             if (verbose)
-                Console.WriteLine($"  Path exists but has no FFmpeg {AvCodecMajor}.x libraries: {path}");
+                ConsoleOutput.Verbose($"  Path exists but has no FFmpeg {AvCodecMajor}.x libraries: {path}");
         }
 
         if (verbose)
-            Console.WriteLine("  No FFmpeg libraries found in the standard locations; falling back to the default loader.");
+            ConsoleOutput.Verbose("  No FFmpeg libraries found in the standard locations; falling back to the default loader.");
 
         return null;
     }

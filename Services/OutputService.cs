@@ -1,26 +1,24 @@
 using nathanbutlerDEV.mt.net.Models;
+using nathanbutlerDEV.mt.net.Utilities;
 using System.Text;
 
 namespace nathanbutlerDEV.mt.net.Services;
 
 public class OutputService
 {
-    /// <summary>JPEG quality used for all contact sheet and single-image output.</summary>
-    private const int JpegQuality = 90;
-
     public static async Task<string> SaveContactSheetAsync(
         RgbaImage image,
         string videoPath,
         ThumbnailOptions options)
     {
-        var outputPath = BuildOutputPath(videoPath, options.Filename);
+        var outputPath = ApplyFormatExtension(BuildOutputPath(videoPath, options.Filename), options);
 
         // Check if file exists and handle skip/overwrite logic
         if (File.Exists(outputPath))
         {
             if (options.SkipExisting)
             {
-                Console.WriteLine($"Skipping existing file: {outputPath}");
+                ConsoleOutput.Info($"Skipping existing file: {outputPath}");
                 return outputPath;
             }
 
@@ -30,28 +28,13 @@ public class OutputService
             }
         }
 
-        // Ensure output directory exists
-        var outputDir = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
-        {
-            Directory.CreateDirectory(outputDir);
-        }
-
-        // Save image based on extension
-        var extension = Path.GetExtension(outputPath).ToLowerInvariant();
+        FileValidator.EnsureDirectoryExists(outputPath);
 
         try
         {
-            if (extension == ".png")
-            {
-                await Task.Run(() => ImageEncoder.SavePng(image, outputPath));
-            }
-            else
-            {
-                await Task.Run(() => ImageEncoder.SaveJpeg(image, outputPath, JpegQuality));
-            }
+            await SaveAsync(image, outputPath, options);
 
-            Console.WriteLine($"Saved contact sheet: {outputPath}");
+            ConsoleOutput.Info($"Saved contact sheet: {outputPath}");
 
             // Apply input file's modified date to output file unless --no-mtime is specified
             if (!options.NoMtime)
@@ -77,16 +60,12 @@ public class OutputService
         ThumbnailOptions options)
     {
         var savedPaths = new List<string>();
-        var basePath = BuildOutputPath(videoPath, options.Filename);
+        var basePath = ApplyFormatExtension(BuildOutputPath(videoPath, options.Filename), options);
         var baseDir = Path.GetDirectoryName(basePath) ?? "";
         var baseName = Path.GetFileNameWithoutExtension(basePath);
         var extension = Path.GetExtension(basePath);
 
-        // Ensure output directory exists
-        if (!Directory.Exists(baseDir))
-        {
-            Directory.CreateDirectory(baseDir);
-        }
+        FileValidator.EnsureDirectoryExists(basePath);
 
         for (int i = 0; i < frames.Count; i++)
         {
@@ -110,14 +89,7 @@ public class OutputService
 
             try
             {
-                if (extension.Equals(".png", StringComparison.InvariantCultureIgnoreCase))
-                {
-                    await Task.Run(() => ImageEncoder.SavePng(frame, individualPath));
-                }
-                else
-                {
-                    await Task.Run(() => ImageEncoder.SaveJpeg(frame, individualPath, JpegQuality));
-                }
+                await SaveAsync(frame, individualPath, options);
 
                 // Apply input file's modified date to output file unless --no-mtime is specified
                 if (!options.NoMtime)
@@ -133,19 +105,35 @@ public class OutputService
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to save individual image {individualPath}: {ex.Message}");
+                ConsoleOutput.Error($"Failed to save individual image {individualPath}: {ex.Message}");
             }
         }
 
-        Console.WriteLine($"Saved {savedPaths.Count} individual images");
+        ConsoleOutput.Info($"Saved {savedPaths.Count} individual images");
         return savedPaths;
     }
 
+    /// <summary>
+    /// Writes the WebVTT sidecar mapping time ranges to sprite regions of the contact sheet.
+    /// </summary>
+    /// <param name="frameCount">Number of thumbnails on the sheet.</param>
+    /// <param name="imagePath">Path of the contact sheet the cues point at.</param>
+    /// <param name="videoPath">Source video, used for the output path and mtime.</param>
+    /// <param name="options">Thumbnail options.</param>
+    /// <param name="layout">Geometry the sheet was actually composed with.</param>
+    /// <param name="vttTimestamps">Cue boundaries: <c>[00:00:00, t1, ..., duration]</c>.</param>
+    /// <remarks>
+    /// The geometry now comes from <see cref="SheetLayout"/>. This method used to recompute
+    /// header height and thumbnail size from the options with a formula that disagreed with the
+    /// composer's — no DPI scaling on the line height — so every cue's y offset was wrong by the
+    /// difference (~15px at default settings) and players showed the neighbouring thumbnail.
+    /// </remarks>
     public static async Task<string> GenerateWebVttAsync(
-        List<(RgbaImage Image, TimeSpan Timestamp)> frames,
+        int frameCount,
         string imagePath,
         string videoPath,
         ThumbnailOptions options,
+        SheetLayout layout,
         List<TimeSpan> vttTimestamps)
     {
         var vttPath = Path.ChangeExtension(BuildOutputPath(videoPath, options.Filename), ".vtt");
@@ -154,46 +142,20 @@ public class OutputService
         vtt.AppendLine("WEBVTT");
         vtt.AppendLine();
 
-        var thumbnailWidth = options.Width;
-        var thumbnailHeight = options.Height > 0
-            ? options.Height
-            : (int)(frames[0].Image.Height * (thumbnailWidth / (double)frames[0].Image.Width));
+        var sheetName = Path.GetFileName(imagePath);
 
-        var columns = options.Columns;
-
-        // Calculate header height for Y-offset (matching Go implementation at mt.go:396)
-        var headerHeight = 0;
-        if (options.Header && !options.WebVtt)
+        for (int i = 0; i < frameCount; i++)
         {
-            // Header height calculation matches ImageComposer logic
-            var numLines = 4; // Base: File Name, Size, Duration, Resolution
-            if (options.HeaderMeta) numLines += 2; // +Codec/FPS lines
-            if (!string.IsNullOrEmpty(options.Comment)) numLines += 1;
-            headerHeight = (5 + (options.FontSize + 4) * numLines) + 10;
-        }
-
-        // Use calculated timestamps array (matching Go implementation at mt.go:396)
-        // vttTimestamps = [00:00:00, timestamp1, timestamp2, ..., videoDuration]
-        for (int i = 0; i < frames.Count; i++)
-        {
-            var row = i / columns;
-            var col = i % columns;
-
-            // Calculate positions WITH padding (matching Go implementation at mt.go:380-388)
-            var padding = options.Padding;
-            var x = (col * thumbnailWidth) + (padding * col) + padding;
-            var y = (row * thumbnailHeight) + (padding * row) + padding + headerHeight;
-
-            // Use calculated timestamps: timestamps[i] --> timestamps[i+1]
             vtt.AppendLine($"{FormatVttTimestamp(vttTimestamps[i])} --> {FormatVttTimestamp(vttTimestamps[i + 1])}");
-            vtt.AppendLine($"{Path.GetFileName(imagePath)}#xywh={x},{y},{thumbnailWidth},{thumbnailHeight}");
+            vtt.AppendLine(
+                $"{sheetName}#xywh={layout.ThumbnailX(i)},{layout.ThumbnailY(i)},{layout.ThumbnailWidth},{layout.ThumbnailHeight}");
             vtt.AppendLine();
         }
 
         try
         {
             await File.WriteAllTextAsync(vttPath, vtt.ToString());
-            Console.WriteLine($"Saved WebVTT file: {vttPath}");
+            ConsoleOutput.Info($"Saved WebVTT file: {vttPath}");
 
             // Apply input file's modified date to output file unless --no-mtime is specified
             if (!options.NoMtime)
@@ -233,9 +195,37 @@ public class OutputService
         return output;
     }
 
+    /// <summary>Formats a cue boundary as WebVTT's <c>HH:MM:SS.mmm</c>.</summary>
+    /// <remarks>
+    /// Uses <see cref="TimeSpan.TotalHours"/>, not <c>Hours</c>: the latter is the hour component
+    /// within a day, so a 25-hour offset used to be written as <c>01:00:00</c> and every cue past
+    /// the first day pointed at the wrong place.
+    /// </remarks>
     private static string FormatVttTimestamp(TimeSpan timestamp)
     {
-        return $"{timestamp.Hours:D2}:{timestamp.Minutes:D2}:{timestamp.Seconds:D2}.{timestamp.Milliseconds:D3}";
+        return $"{(int)timestamp.TotalHours:D2}:{timestamp.Minutes:D2}:{timestamp.Seconds:D2}.{timestamp.Milliseconds:D3}";
+    }
+
+    /// <summary>Encodes <paramref name="image"/> to <paramref name="path"/> in the resolved format.</summary>
+    private static Task SaveAsync(RgbaImage image, string path, ThumbnailOptions options)
+    {
+        return options.ResolveFormat(path) == OutputFormat.Png
+            ? Task.Run(() => ImageEncoder.SavePng(image, path))
+            : Task.Run(() => ImageEncoder.SaveJpeg(image, path, options.Quality));
+    }
+
+    /// <summary>
+    /// Corrects the output extension when <c>--format</c> was given explicitly, so
+    /// <c>--format png</c> does not write PNG bytes into a file named <c>.jpg</c>.
+    /// </summary>
+    private static string ApplyFormatExtension(string path, ThumbnailOptions options)
+    {
+        return options.Format switch
+        {
+            OutputFormat.Png => Path.ChangeExtension(path, ".png"),
+            OutputFormat.Jpg => Path.ChangeExtension(path, ".jpg"),
+            _ => path
+        };
     }
 
     /// <summary>

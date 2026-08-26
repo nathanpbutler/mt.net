@@ -1,4 +1,5 @@
 using nathanbutlerDEV.mt.net.Models;
+using nathanbutlerDEV.mt.net.Utilities;
 
 namespace nathanbutlerDEV.mt.net.Services;
 
@@ -21,7 +22,7 @@ public static class ImageLoader
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error loading image '{path}': {ex.Message}");
+            ConsoleOutput.Error($"Error loading image '{path}': {ex.Message}");
             return null;
         }
     }
