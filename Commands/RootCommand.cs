@@ -298,21 +298,9 @@ public static class RootCommandBuilder
         };
 
         // Global Options
-        var composerOption = new Option<string>("--composer")
-        {
-            Description = "Choose image composer: ffmpeg, imagesharp",
-            // CompletionSources = { "ffmpeg", "imagesharp" },
-            DefaultValueFactory = _ => "ffmpeg" // FFMpeg.AutoGen is now default
-        };
-        composerOption.CompletionSources.Add(ctx =>
-        {
-            return [new CompletionItem("ffmpeg"), new CompletionItem("imagesharp")];
-        });
-
         var verboseOption = new Option<bool>("--verbose", ["-v"])
         {
-            Description = "Enable verbose logging",
-            Arity = ArgumentArity.ExactlyOne
+            Description = "Enable verbose logging"
         };
 
         var filtersOption = new Option<bool>("--filters")
@@ -382,7 +370,6 @@ public static class RootCommandBuilder
         rootCommand.Options.Add(uploadUrlOption);
 
         // Global Options
-        rootCommand.Options.Add(composerOption);
         rootCommand.Options.Add(verboseOption);
         rootCommand.Options.Add(filtersOption);
 
@@ -458,10 +445,7 @@ public static class RootCommandBuilder
 
                 // Upload Options
                 Upload = parseResult.GetValue(uploadOption),
-                UploadUrl = parseResult.GetValue(uploadUrlOption)!,
-
-                // Global Options
-                Composer = parseResult.GetValue(composerOption)!
+                UploadUrl = parseResult.GetValue(uploadUrlOption)!
             };
 
             // Handle WebVTT special mode (mimics Go behavior at mt.go:441-447)
@@ -491,7 +475,7 @@ public static class RootCommandBuilder
             try
             {
                 // Initialize FFmpeg libraries
-                FFmpegHelper.Initialize();
+                FFmpegHelper.Initialize(parseResult.GetValue(verboseOption));
 
                 await ProcessVideoAsync(file.FullName, options);
                 return 0;
@@ -514,15 +498,12 @@ public static class RootCommandBuilder
     {
         Console.WriteLine($"Processing video: {videoPath}");
 
-        // Initialize services
-        var videoProcessor = new VideoProcessor();
-        var contentDetection = new ContentDetectionService();
-        var filterService = new FilterService();
-        var outputService = new OutputService();
-
-        if (options.Verbose)
+        // Text is rendered with FFmpeg's drawtext filter, which is absent from builds
+        // compiled without libfreetype (notably Homebrew's stock ffmpeg formula).
+        // Warn rather than fail: a contact sheet without text is still useful.
+        if (options.Header || !options.DisableTimestamps)
         {
-            Console.WriteLine($"Using {(options.Composer == "ffmpeg" ? "FFmpeg.AutoGen" : "ImageSharp")} composer");
+            FFmpegHelper.WarnIfDrawTextMissing();
         }
 
         // Step 1: Extract video metadata
@@ -538,7 +519,7 @@ public static class RootCommandBuilder
 
         // Step 3: Extract frames with content detection
         Console.WriteLine("Extracting frames...");
-        var frames = new List<(SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>, TimeSpan)>();
+        var frames = new List<(RgbaImage, TimeSpan)>();
 
         for (int i = 0; i < timestamps.Count; i++)
         {
@@ -578,17 +559,8 @@ public static class RootCommandBuilder
             return;
         }
 
-        // Step 4: Apply image filters (only for ImageSharp composer)
-        if (options.Composer != "ffmpeg" && !string.IsNullOrEmpty(options.Filter) && options.Filter != "none")
-        {
-            Console.WriteLine($"Applying filters: {options.Filter}");
-            foreach (var (frame, _) in frames)
-            {
-                FilterService.ApplyFilters(frame, options.Filter);
-            }
-        }
-
-        // Step 5: Create contact sheet or save individual images
+        // Step 4: Create contact sheet or save individual images
+        // (image filters are applied per-frame inside the composer's filter graph)
         if (options.SingleImages)
         {
             Console.WriteLine("Saving individual images...");
@@ -598,17 +570,10 @@ public static class RootCommandBuilder
         {
             Console.WriteLine("Creating contact sheet...");
 
-            // Choose composer implementation based on --composer option
-            SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32> contactSheet;
-            if (options.Composer == "ffmpeg")
+            RgbaImage contactSheet;
+            using (var ffmpegComposer = new FFmpegFilterGraphComposer())
             {
-                using var ffmpegComposer = new FFmpegFilterGraphComposer();
                 contactSheet = ffmpegComposer.CreateContactSheet(frames, headerInfo, options);
-            }
-            else
-            {
-                var imageComposer = new ImageComposer();
-                contactSheet = ImageComposer.CreateContactSheet(frames, headerInfo, options);
             }
 
             using (contactSheet)
@@ -616,14 +581,14 @@ public static class RootCommandBuilder
                 // Apply watermarks if specified
                 if (!string.IsNullOrEmpty(options.Watermark))
                 {
-                    ImageComposer.ApplyWatermark(contactSheet, options.Watermark, center: true);
+                    WatermarkService.ApplyWatermark(contactSheet, options.Watermark, center: true);
                 }
 
                 if (!string.IsNullOrEmpty(options.WatermarkAll))
                 {
                     foreach (var (frame, _) in frames)
                     {
-                        ImageComposer.ApplyWatermark(frame, options.WatermarkAll, center: false);
+                        WatermarkService.ApplyWatermark(frame, options.WatermarkAll, center: false);
                     }
                 }
 

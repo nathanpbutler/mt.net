@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using nathanbutlerDEV.mt.net.Models;
+using nathanbutlerDEV.mt.net.Utilities;
 
 namespace nathanbutlerDEV.mt.net.Services;
 
@@ -22,7 +22,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <param name="image">The input image to process.</param>
     /// <param name="filterString">A comma-separated string of filter names to apply.</param>
     /// <returns>The processed image after applying the filters.</returns>
-    public Image<Rgba32> ApplyFilters(Image<Rgba32> image, string filterString)
+    public RgbaImage ApplyFilters(RgbaImage image, string filterString)
     {
         if (string.IsNullOrEmpty(filterString) || filterString.Equals("none", StringComparison.OrdinalIgnoreCase))
         {
@@ -51,7 +51,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <param name="image">The input image to process.</param>
     /// <param name="filterName">The name of the filter to apply.</param>
     /// <returns>The processed image after applying the filter.</returns>
-    private Image<Rgba32> ApplyFilter(Image<Rgba32> image, string filterName)
+    private RgbaImage ApplyFilter(RgbaImage image, string filterName)
     {
         return filterName.ToLowerInvariant() switch
         {
@@ -70,7 +70,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// </summary>
     /// <param name="image">The input image to process.</param>
     /// <returns>The processed image after applying the greyscale filter.</returns>
-    private Image<Rgba32> ApplyGreyscaleFFmpeg(Image<Rgba32> image)
+    private RgbaImage ApplyGreyscaleFFmpeg(RgbaImage image)
     {
         var filterSpec = "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3";
         return ApplyFFmpegFilter(image, filterSpec);
@@ -81,7 +81,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// </summary>
     /// <param name="image">The input image to process.</param>
     /// <returns>The processed image after applying the sepia filter.</returns>
-    private Image<Rgba32> ApplySepiaFFmpeg(Image<Rgba32> image)
+    private RgbaImage ApplySepiaFFmpeg(RgbaImage image)
     {
         var filterSpec = "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131";
         return ApplyFFmpegFilter(image, filterSpec);
@@ -92,7 +92,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// </summary>
     /// <param name="image">The input image to process.</param>
     /// <returns>The processed image after applying the invert filter.</returns>
-    private Image<Rgba32> ApplyInvertFFmpeg(Image<Rgba32> image)
+    private RgbaImage ApplyInvertFFmpeg(RgbaImage image)
     {
         var filterSpec = "negate";
         return ApplyFFmpegFilter(image, filterSpec);
@@ -103,7 +103,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// </summary>
     /// <param name="image">The input image to process.</param>
     /// <returns>The processed image after applying the fancy rotation filter.</returns>
-    private Image<Rgba32> ApplyFancyFFmpeg(Image<Rgba32> image)
+    private RgbaImage ApplyFancyFFmpeg(RgbaImage image)
     {
         // Random rotation between -15 and 15 degrees
         var angleDegrees = Random.Next(-15, 16);
@@ -119,7 +119,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// </summary>
     /// <param name="image">The input image to process.</param>
     /// <returns>The processed image after applying the cross-processing effect.</returns>
-    private Image<Rgba32> ApplyCrossProcessingFFmpeg(Image<Rgba32> image)
+    private RgbaImage ApplyCrossProcessingFFmpeg(RgbaImage image)
     {
         // Cross processing: shift colors, increase saturation and contrast
         var filterSpec = "hue=h=30,eq=saturation=1.2:contrast=1.1";
@@ -131,7 +131,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// </summary>
     /// <param name="image">The input image to process.</param>
     /// <returns>The processed image after applying the film strip effect.</returns>
-    private Image<Rgba32> ApplyStripFFmpeg(Image<Rgba32> image)
+    private RgbaImage ApplyStripFFmpeg(RgbaImage image)
     {
         var sprocketWidth = image.Width / 20;
         var sprocketHeight = sprocketWidth;
@@ -167,7 +167,7 @@ public sealed unsafe class FFmpegFilterService : IDisposable
     /// <param name="image">The input image to process.</param>
     /// <param name="filterSpec">The FFmpeg filter specification string.</param>
     /// <returns>The processed image after applying the filter.</returns>
-    private Image<Rgba32> ApplyFFmpegFilter(Image<Rgba32> image, string filterSpec)
+    private RgbaImage ApplyFFmpegFilter(RgbaImage image, string filterSpec)
     {
         AVFilterGraph* filterGraph = null;
         AVFilterContext* bufferSrcCtx = null;
@@ -177,8 +177,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
 
         try
         {
-            // Convert ImageSharp to AVFrame
-            inputFrame = ImageToAVFrame(image);
+            // Convert the raster to an AVFrame
+            inputFrame = AVFrameBridge.ToAVFrame(image);
 
             // Create filter graph
             filterGraph = ffmpeg.avfilter_graph_alloc();
@@ -208,8 +208,8 @@ public sealed unsafe class FFmpegFilterService : IDisposable
                 return image;
             }
 
-            // Convert back to ImageSharp
-            return AVFrameToImage(outputFrame);
+            // Convert the filtered frame back to a raster
+            return AVFrameBridge.ToRgbaImage(outputFrame);
         }
         catch (Exception ex)
         {
@@ -304,91 +304,6 @@ public sealed unsafe class FFmpegFilterService : IDisposable
         {
             return false;
         }
-    }
-
-    /// <summary>
-    /// Converts ImageSharp Image to AVFrame.
-    /// </summary>
-    /// <param name="image">The input image to convert.</param>
-    /// <returns>The allocated AVFrame containing the image data.</returns>
-    private AVFrame* ImageToAVFrame(Image<Rgba32> image)
-    {
-        var frame = ffmpeg.av_frame_alloc();
-        if (frame == null)
-        {
-            throw new InvalidOperationException("Failed to allocate AVFrame");
-        }
-
-        frame->width = image.Width;
-        frame->height = image.Height;
-        frame->format = (int)AVPixelFormat.AV_PIX_FMT_RGBA;
-
-        var bufferSize = ffmpeg.av_image_get_buffer_size(AVPixelFormat.AV_PIX_FMT_RGBA, image.Width, image.Height, 1);
-        var buffer = (byte*)ffmpeg.av_malloc((ulong)bufferSize);
-
-        var dstData = new byte_ptr4();
-        var dstLinesize = new int4();
-        ffmpeg.av_image_fill_arrays(ref dstData, ref dstLinesize, buffer, AVPixelFormat.AV_PIX_FMT_RGBA, image.Width, image.Height, 1);
-
-        frame->data[0] = dstData[0];
-        frame->data[1] = dstData[1];
-        frame->data[2] = dstData[2];
-        frame->data[3] = dstData[3];
-
-        frame->linesize[0] = dstLinesize[0];
-        frame->linesize[1] = dstLinesize[1];
-        frame->linesize[2] = dstLinesize[2];
-        frame->linesize[3] = dstLinesize[3];
-
-        // Copy pixel data
-        image.ProcessPixelRows(accessor =>
-        {
-            for (int y = 0; y < image.Height; y++)
-            {
-                var row = accessor.GetRowSpan(y);
-                var destRow = buffer + (y * dstLinesize[0]);
-
-                for (int x = 0; x < image.Width; x++)
-                {
-                    var pixel = row[x];
-                    destRow[x * 4 + 0] = pixel.R;
-                    destRow[x * 4 + 1] = pixel.G;
-                    destRow[x * 4 + 2] = pixel.B;
-                    destRow[x * 4 + 3] = pixel.A;
-                }
-            }
-        });
-
-        return frame;
-    }
-
-    /// <summary>
-    /// Converts AVFrame to ImageSharp Image.
-    /// </summary>
-    /// <param name="frame">The input AVFrame to convert.</param>
-    /// <returns>The converted ImageSharp Image.</returns>
-    private Image<Rgba32> AVFrameToImage(AVFrame* frame)
-    {
-        var image = new Image<Rgba32>(frame->width, frame->height);
-        var srcData = frame->data[0];
-        var stride = frame->linesize[0];
-
-        image.ProcessPixelRows(accessor =>
-        {
-            for (int y = 0; y < frame->height; y++)
-            {
-                var row = accessor.GetRowSpan(y);
-                var srcRow = srcData + (y * stride);
-
-                for (int x = 0; x < frame->width; x++)
-                {
-                    var pixelPtr = srcRow + (x * 4);
-                    row[x] = new Rgba32(pixelPtr[0], pixelPtr[1], pixelPtr[2], pixelPtr[3]);
-                }
-            }
-        });
-
-        return image;
     }
 
     /// <summary>

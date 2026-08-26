@@ -1,7 +1,5 @@
 using FFmpeg.AutoGen.Abstractions;
 using nathanbutlerDEV.mt.net.Models;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace nathanbutlerDEV.mt.net.Services;
 
@@ -188,12 +186,12 @@ public class VideoProcessor
         return timestamps;
     }
 
-    public static async Task<List<(Image<Rgba32> Image, TimeSpan Timestamp)>> ExtractFramesAsync(
+    public static async Task<List<(RgbaImage Image, TimeSpan Timestamp)>> ExtractFramesAsync(
         string videoPath,
         List<TimeSpan> timestamps,
         ThumbnailOptions options)
     {
-        var frames = new List<(Image<Rgba32>, TimeSpan)>();
+        var frames = new List<(RgbaImage, TimeSpan)>();
 
         // Use FFmpeg.AutoGen decoder for better control over seeking
         using (var decoder = new FFmpegAutoGenVideoDecoder(videoPath))
@@ -211,7 +209,7 @@ public class VideoProcessor
         return frames;
     }
 
-    private static async Task<Image<Rgba32>?> ExtractFrameAtTimestampAsync(
+    private static async Task<RgbaImage?> ExtractFrameAtTimestampAsync(
         string videoPath,
         TimeSpan timestamp,
         ThumbnailOptions options)
@@ -230,14 +228,14 @@ public class VideoProcessor
         }
     }
 
-    public static async Task<Image<Rgba32>?> ExtractFrameWithRetriesAsync(
+    public static async Task<RgbaImage?> ExtractFrameWithRetriesAsync(
         string videoPath,
         TimeSpan timestamp,
         ThumbnailOptions options,
-        Func<Image<Rgba32>, bool>? skipCondition = null,
+        Func<RgbaImage, bool>? skipCondition = null,
         int maxRetries = 3)
     {
-        Image<Rgba32>? frame = null;
+        RgbaImage? frame = null;
         var currentTimestamp = timestamp;
         var retryCount = 0;
 

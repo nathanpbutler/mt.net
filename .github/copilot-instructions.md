@@ -11,9 +11,11 @@
 The application uses a stateless service pattern with clear separation of concerns:
 
 - **VideoProcessor** (`Services/VideoProcessor.cs`) - FFmpeg integration for metadata extraction and frame capture
-- **FFmpegFilterGraphComposer** (`Services/FFmpegFilterGraphComposer.cs`) - FFmpeg.AutoGen-based contact sheet creation with filter graphs (default)
-- **ImageComposer** (`Services/ImageComposer.cs`) - Legacy ImageSharp-based contact sheet creation (fallback via `--composer imagesharp`)
-- **FilterService** (`Services/FilterService.cs`) - Image processing filters (greyscale, sepia, strip effects, etc.)
+- **FFmpegFilterGraphComposer** (`Services/FFmpegFilterGraphComposer.cs`) - FFmpeg.AutoGen-based contact sheet creation with filter graphs
+- **FFmpegFilterService** (`Services/FFmpegFilterService.cs`) - Image filters via FFmpeg filter graphs
+- **ImageEncoder** (`Services/ImageEncoder.cs`) - PNG/JPEG encoding via FFmpeg
+- **ImageLoader** (`Services/ImageLoader.cs`) - Still image decoding via FFmpeg
+- **WatermarkService** (`Services/WatermarkService.cs`) - Watermark blending
 - **ContentDetectionService** (`Services/ContentDetectionService.cs`) - Frame quality analysis (blank/blur/NSFW detection)
 - **OutputService** (`Services/OutputService.cs`) - File I/O, WebVTT generation, and filename pattern substitution
 
@@ -31,7 +33,6 @@ Video Input → Extract Metadata → Calculate Timestamps → Extract Frames
 - **ThumbnailOptions** (`Models/ThumbnailOptions.cs`) - Single comprehensive options class with 40+ properties
 - **System.CommandLine** - Direct CLI option mapping to ThumbnailOptions properties
 - **Pattern**: Each CLI option maps to a ThumbnailOptions property with default values and aliases
-- **Composer Selection**: `--composer` option chooses between `ffmpeg` (default) and `imagesharp` (legacy)
 
 ## Key Development Patterns
 
@@ -50,7 +51,7 @@ Services are instantiated per-operation (not injected) in the main processing me
 ```csharp
 var videoProcessor = new VideoProcessor();
 var contentDetection = new ContentDetectionService();
-var filterService = new FilterService();
+var outputService = new OutputService();
 // Use directly without DI container
 ```
 
@@ -61,7 +62,7 @@ Critical pattern for image processing - always dispose images to prevent memory 
 ```csharp
 foreach (var (frame, _) in frames)
 {
-    frame.Dispose(); // Essential for ImageSharp images
+    frame.Dispose(); // Returns the pooled RgbaImage buffer
 }
 ```
 
@@ -160,36 +161,31 @@ if (options.WebVtt)
 
 ### Image Composition Pipeline
 
-**Default (FFmpeg.AutoGen - Hybrid)**: Uses FFmpeg for frame operations, ImageSharp for final composition:
+Fully FFmpeg-based as of v2.4.0. There is no second composer.
 
 **Per-Frame Processing (FFmpeg.AutoGen):**
 
-- Load frames as `Image<Rgba32>` from video
-- Convert ImageSharp → AVFrame
+- Decode frames directly to `AV_PIX_FMT_RGBA`, wrapped as `RgbaImage`
+- Convert `RgbaImage` → AVFrame via `Utilities/AVFrameBridge.cs`
 - Process with FFmpeg filter graphs:
   - `scale` filter (thumbnail resizing)
   - `drawtext` filter (timestamps with freetype - pixel-perfect)
   - `drawtext` filter (header text with freetype - pixel-perfect)
-  - `drawbox` filter (borders)
+  - `drawbox` filter (borders), `v360` (VR conversion)
 - Apply filters via `FFmpegFilterService` (native FFmpeg filters)
-- Convert AVFrame → ImageSharp
+- Convert AVFrame → `RgbaImage`
 
-**Final Composition (ImageSharp):**
+**Final Composition (RgbaImage):**
 
-- Create canvas with background color
-- Arrange processed frames in grid layout (DrawImage)
+- Create canvas with background colour (`Fill`)
+- Arrange processed frames in grid layout (`DrawImage`)
 - Position header
-- Apply watermarks
+- Apply watermarks via `WatermarkService`
 
-**Legacy (ImageSharp)**: Available via `--composer imagesharp`:
+**Encoding**: `Services/ImageEncoder.cs` - PNG (`AV_CODEC_ID_PNG`, rgba) or JPEG
+(`AV_CODEC_ID_MJPEG`, yuvj420p) via FFmpeg's own encoders.
 
-- Load frames as `Image<Rgba32>`
-- Resize with ImageSharp
-- Apply filters via `FilterService.ApplyFilters()`
-- Text rendering via `SixLabors.Fonts` (differs from freetype)
-- Compose contact sheets in `ImageComposer`
-
-**Key Difference**: FFmpeg composer achieves **pixel-perfect text** matching Go mt (freetype), while keeping grid layout simple in C# code. ImageSharp composer uses different text engine.
+**Requirement**: `drawtext` needs an FFmpeg build compiled with libfreetype.
 
 ### Content Detection Algorithms
 
@@ -207,7 +203,7 @@ dotnet build
 dotnet run -- video.mp4 --numcaps 9 --columns 3
 
 # Build optimized single-file executable
-dotnet publish -c Release -r osx-arm64 --self-contained
+dotnet publish -c Release -r osx-arm64 --self-contained   # or win-x64 / linux-x64
 
 # Test with filters and content detection
 dotnet run -- video.mp4 --filter greyscale,sepia --skip-blank --header-meta
@@ -248,7 +244,7 @@ Performance comparison (44 thumbnails / 4 columns, 1080p video):
 
 ### Known Limitations
 
-- **Font Rendering** (ImageSharp composer only): When using `--composer imagesharp`, text rendering uses a different engine than freetype, resulting in slightly different text appearance. The default FFmpeg composer provides pixel-perfect text rendering matching the original Go implementation.
+- **Font Rendering**: text is drawn with FFmpeg `drawtext`, which needs a build compiled with libfreetype. Homebrew stock `ffmpeg` is not; use `brew install ffmpeg-full`. `FFmpegHelper.WarnIfDrawTextMissing()` warns instead of silently omitting text.
 
 ## Project-Specific Conventions
 
@@ -302,7 +298,7 @@ Colors are specified as "R,G,B" strings and parsed by `Utilities/ColorParser.cs`
 ### When to Proceed Independently
 
 - **Standard .NET patterns**: Use established .NET conventions for common tasks
-- **ImageSharp operations**: Standard SixLabors.ImageSharp documentation is acceptable
+- **Pixel operations**: See `Models/RgbaImage.cs` and `Utilities/AVFrameBridge.cs`
 - **General C# best practices**: No need to ask for standard language features
 
 ## Reference Implementation
@@ -311,17 +307,14 @@ The `reference/original-mt/` directory contains the complete Go implementation a
 
 ## Migration Status
 
-**✅ FFmpeg.AutoGen for Image Composition** - COMPLETED (v2.0 - Hybrid Approach)
+**✅ FFmpeg.AutoGen for Image Composition** - COMPLETED (v2.4.0 - ImageSharp fully removed)
 
-- **Status**: Fully implemented and set as default composer
-- **Implementation**: Hybrid approach combining FFmpeg.AutoGen and ImageSharp
-  - **FFmpeg.AutoGen**: Frame resizing, text rendering (freetype), borders, image filters
-  - **ImageSharp**: Grid layout, canvas creation, watermarks (simpler than FFmpeg xstack/tile)
+- **Status**: Complete. ImageSharp, ImageSharp.Drawing and SixLabors.Fonts removed; FFmpeg is the
+  only imaging dependency. See `MIGRATION_FFMPEG_AUTOGEN.md`.
+  - **FFmpeg**: Frame resizing, text rendering (freetype), borders, filters, PNG/JPEG encoding
+  - **Managed**: `RgbaImage` pooled raster for grid layout, canvas creation and watermarks
 - **Benefits**:
   - Pixel-perfect text rendering matching mt (uses freetype)
-  - Simple, maintainable grid layout code in C#
-  - Best of both worlds: exact rendering + clean architecture
-- **Why Hybrid**: Critical goal (pixel-perfect text) achieved while keeping code maintainable
-- **Access**: Use `--composer ffmpeg` (default) or `--composer imagesharp` (legacy fallback)
-- **Future**: Full FFmpeg migration possible but not necessary - current approach is optimal
-- **Migration Period**: ImageSharp composer kept temporarily as fallback, will be removed after testing period
+  - Three fewer NuGet dependencies
+  - Fixed a per-frame native memory leak in the old AVFrame conversions
+- **Timeline**: v2.0 introduced the hybrid composer; v2.4.0 removed ImageSharp and `--composer`

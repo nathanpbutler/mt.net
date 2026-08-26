@@ -1,7 +1,3 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Formats.Png;
 using nathanbutlerDEV.mt.net.Models;
 using System.Text;
 
@@ -9,8 +5,11 @@ namespace nathanbutlerDEV.mt.net.Services;
 
 public class OutputService
 {
+    /// <summary>JPEG quality used for all contact sheet and single-image output.</summary>
+    private const int JpegQuality = 90;
+
     public static async Task<string> SaveContactSheetAsync(
-        Image<Rgba32> image,
+        RgbaImage image,
         string videoPath,
         ThumbnailOptions options)
     {
@@ -45,11 +44,11 @@ public class OutputService
         {
             if (extension == ".png")
             {
-                await image.SaveAsPngAsync(outputPath, new PngEncoder { CompressionLevel = PngCompressionLevel.BestCompression });
+                await Task.Run(() => ImageEncoder.SavePng(image, outputPath));
             }
             else
             {
-                await image.SaveAsJpegAsync(outputPath, new JpegEncoder { Quality = 90 });
+                await Task.Run(() => ImageEncoder.SaveJpeg(image, outputPath, JpegQuality));
             }
 
             Console.WriteLine($"Saved contact sheet: {outputPath}");
@@ -73,7 +72,7 @@ public class OutputService
     }
 
     public static async Task<List<string>> SaveIndividualImagesAsync(
-        List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
+        List<(RgbaImage Image, TimeSpan Timestamp)> frames,
         string videoPath,
         ThumbnailOptions options)
     {
@@ -113,11 +112,11 @@ public class OutputService
             {
                 if (extension.Equals(".png", StringComparison.InvariantCultureIgnoreCase))
                 {
-                    await frame.SaveAsPngAsync(individualPath);
+                    await Task.Run(() => ImageEncoder.SavePng(frame, individualPath));
                 }
                 else
                 {
-                    await frame.SaveAsJpegAsync(individualPath, new JpegEncoder { Quality = 90 });
+                    await Task.Run(() => ImageEncoder.SaveJpeg(frame, individualPath, JpegQuality));
                 }
 
                 // Apply input file's modified date to output file unless --no-mtime is specified
@@ -143,7 +142,7 @@ public class OutputService
     }
 
     public static async Task<string> GenerateWebVttAsync(
-        List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
+        List<(RgbaImage Image, TimeSpan Timestamp)> frames,
         string imagePath,
         string videoPath,
         ThumbnailOptions options,

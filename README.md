@@ -18,22 +18,36 @@ A .NET port of [mt](https://github.com/mutschler/mt) (media thumbnailer). Genera
 - Skip blank or blurry frames automatically
 - WebVTT output for HTML5 video players
 - Individual thumbnail export
-- Dual composer system: FFmpeg.AutoGen (default) or ImageSharp (legacy)
+- Pure FFmpeg pipeline — no managed imaging dependencies
 
 ## Installation
 
-**Requirements:** .NET 9.0+ and FFmpeg
+**Requirements:** .NET 10.0+ and FFmpeg 9.x
+
+mt.net renders the header and timestamps with FFmpeg's `drawtext` filter, which is only
+available in builds compiled with libfreetype. Install a build that includes it:
 
 ```bash
-# macOS
-brew install ffmpeg
+# macOS - use ffmpeg-full, NOT the stock ffmpeg formula.
+# Homebrew slimmed down the ffmpeg formula and it is now built without libfreetype,
+# which removes the drawtext, subtitles and ass filters.
+brew install ffmpeg-full
 
 # Ubuntu/Debian
 sudo apt-get install ffmpeg
 
 # Windows
-# Download from https://www.gyan.dev/ffmpeg/builds and add to PATH
+# Download a 9.x shared build from https://www.gyan.dev/ffmpeg/builds and add its bin/ to PATH
 ```
+
+If mt.net cannot find your FFmpeg libraries, point it at them directly:
+
+```bash
+export MT_FFMPEG_PATH=/opt/homebrew/opt/ffmpeg-full/lib
+```
+
+If you run against an FFmpeg build without `drawtext`, mt.net still produces a contact
+sheet but prints a warning and omits all text.
 
 **Build:**
 
@@ -129,7 +143,6 @@ mt video.mp4 --vtt
 
 **Global:**
 
-- `--composer`: Image composer: `ffmpeg` (default) or `imagesharp`
 - `-v, --verbose`: Verbose logging
 - `--filters`: List all available image filters
 - `--help`: Show all options
@@ -158,7 +171,7 @@ Supports JSON config files, environment variables (prefix `MT_`), and CLI argume
 
 - Full feature parity with original Go implementation (40+ CLI options)
 - FFmpeg.AutoGen video decoder with direct libavcodec control
-- Hybrid composer (FFmpeg filter graphs for rendering + ImageSharp for layout)
+- Pure FFmpeg pipeline (filter graphs for rendering, raw RGBA rasters for layout)
 - Pixel-perfect text rendering with freetype (matches original)
 - WebVTT generation with accurate coordinate mapping
 - Image filters, content detection, metadata headers
@@ -173,7 +186,6 @@ Supports JSON config files, environment variables (prefix `MT_`), and CLI argume
 **Known Issues:**
 
 - `--filters` flag requires dummy file argument due to System.CommandLine validation
-- ImageSharp composer has different text rendering than freetype (use default FFmpeg composer)
 
 ## Architecture
 
@@ -188,17 +200,22 @@ mt.net/
 ├── Models/
 │   ├── ThumbnailOptions.cs         # Generation options
 │   ├── HeaderInfo.cs               # Metadata
+│   ├── RgbaImage.cs                # RGBA raster (pixel container)
 │   └── ImageFilter.cs              # Filter definitions
 ├── Services/
 │   ├── VideoProcessor.cs           # Metadata extraction
 │   ├── FFmpegAutoGenVideoDecoder.cs # Frame extraction
-│   ├── FFmpegFilterGraphComposer.cs # Default composer
-│   ├── ImageComposer.cs            # Legacy composer
+│   ├── FFmpegFilterGraphComposer.cs # Contact sheet composer
 │   ├── FFmpegFilterService.cs      # FFmpeg filters
 │   ├── ContentDetectionService.cs  # Blank/blur detection
+│   ├── ImageEncoder.cs             # PNG/JPEG encoding via FFmpeg
+│   ├── ImageLoader.cs              # Still image decoding via FFmpeg
+│   ├── WatermarkService.cs         # Watermark blending
 │   └── OutputService.cs            # File/WebVTT output
 └── Utilities/
+    ├── AVFrameBridge.cs            # RgbaImage <-> AVFrame
     ├── ColorParser.cs              # RGB parsing
+    ├── RgbaColor.cs                # RGBA colour struct
     ├── TimeSpanParser.cs           # Time parsing
     └── FFmpegHelper.cs             # FFmpeg helpers
 ```

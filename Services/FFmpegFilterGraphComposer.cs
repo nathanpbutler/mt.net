@@ -1,9 +1,5 @@
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Drawing.Processing;
 using nathanbutlerDEV.mt.net.Models;
 using nathanbutlerDEV.mt.net.Utilities;
 
@@ -36,8 +32,8 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <param name="headerInfo">Information for the header.</param>
     /// <param name="options">Thumbnail options.</param>
     /// <returns>The composed contact sheet image.</returns>
-    public Image<Rgba32> CreateContactSheet(
-        List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
+    public RgbaImage CreateContactSheet(
+        List<(RgbaImage Image, TimeSpan Timestamp)> frames,
         HeaderInfo headerInfo,
         ThumbnailOptions options)
     {
@@ -52,7 +48,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         // 2. Use basic composition for the final layout
         // This allows incremental migration while maintaining functionality
 
-        var processedFrames = new List<(Image<Rgba32> Image, TimeSpan Timestamp)>();
+        var processedFrames = new List<(RgbaImage Image, TimeSpan Timestamp)>();
 
         try
         {
@@ -86,8 +82,8 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <param name="options">Thumbnail options.</param>
     /// <param name="isMiddleFrame">Indicates if this is the middle frame (for special watermarking).</param>
     /// <returns>The processed frame image.</returns>
-    private Image<Rgba32> ProcessFrameWithFilters(
-        Image<Rgba32> frame,
+    private RgbaImage ProcessFrameWithFilters(
+        RgbaImage frame,
         TimeSpan timestamp,
         ThumbnailOptions options,
         bool isMiddleFrame = false) // TODO: find way to use this
@@ -101,7 +97,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         try
         {
             // Convert ImageSharp to AVFrame
-            inputFrame = ImageToAVFrame(frame);
+            inputFrame = AVFrameBridge.ToAVFrame(frame);
 
             // Create filter graph
             filterGraph = ffmpeg.avfilter_graph_alloc();
@@ -133,7 +129,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             }
 
             // Convert back to ImageSharp
-            var processedFrame = AVFrameToImage(outputFrame);
+            var processedFrame = AVFrameBridge.ToRgbaImage(outputFrame);
 
             // Apply image filters if specified
             if (!string.IsNullOrEmpty(options.Filter) && !options.Filter.Equals("none", StringComparison.OrdinalIgnoreCase))
@@ -348,8 +344,8 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <param name="headerInfo">Information for the header.</param>
     /// <param name="options">Thumbnail options.</param>
     /// <returns>The composed contact sheet image.</returns>
-    private Image<Rgba32> ComposeContactSheet(
-        List<(Image<Rgba32> Image, TimeSpan Timestamp)> frames,
+    private RgbaImage ComposeContactSheet(
+        List<(RgbaImage Image, TimeSpan Timestamp)> frames,
         HeaderInfo headerInfo,
         ThumbnailOptions options)
     {
@@ -370,7 +366,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 
         // Calculate header height
         var headerHeight = 0;
-        Image<Rgba32>? headerImage = null;
+        RgbaImage? headerImage = null;
         if (options.Header)
         {
             headerImage = CreateHeaderWithFFmpeg(headerInfo, options, contentWidth);
@@ -381,13 +377,13 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 
         // Create canvas
         var bgColor = ColorParser.ParseRgb(options.BgContent);
-        var canvas = new Image<Rgba32>(contentWidth, totalHeight);
-        canvas.Mutate(ctx => ctx.Fill(bgColor));
+        var canvas = new RgbaImage(contentWidth, totalHeight);
+        canvas.Fill(bgColor);
 
         // Draw header if created
         if (headerImage != null)
         {
-            canvas.Mutate(ctx => ctx.DrawImage(headerImage, new Point(0, 0), 1f));
+            canvas.DrawImage(headerImage, 0, 0);
             headerImage.Dispose();
         }
 
@@ -401,7 +397,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             var x = padding + (col * (thumbnailWidth + padding));
             var y = headerHeight + padding + (row * (thumbnailHeight + padding));
 
-            canvas.Mutate(ctx => ctx.DrawImage(frame, new Point(x, y), 1f));
+            canvas.DrawImage(frame, x, y);
         }
 
         return canvas;
@@ -414,7 +410,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <param name="options">Thumbnail options.</param>
     /// <param name="width">Width of the header.</param>
     /// <returns>The created header image, or null if creation failed.</returns>
-    private Image<Rgba32>? CreateHeaderWithFFmpeg(HeaderInfo headerInfo, ThumbnailOptions options, int width)
+    private RgbaImage? CreateHeaderWithFFmpeg(HeaderInfo headerInfo, ThumbnailOptions options, int width)
     {
         try
         {
@@ -423,14 +419,14 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
             var fgColor = ColorParser.ParseRgb(options.FgHeader);
 
             // Create blank header canvas
-            var header = new Image<Rgba32>(width, height);
-            header.Mutate(ctx => ctx.Fill(bgColor));
+            var header = new RgbaImage(width, height);
+            header.Fill(bgColor);
 
             // Build header text lines
             var headerLines = BuildHeaderTextLines(headerInfo, options);
 
             // Convert to AVFrame and apply text using drawtext filter
-            var frame = ImageToAVFrame(header);
+            var frame = AVFrameBridge.ToAVFrame(header);
             header.Dispose();
 
             try
@@ -441,7 +437,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
 
                 if (processedFrame != null)
                 {
-                    return AVFrameToImage(processedFrame);
+                    return AVFrameBridge.ToRgbaImage(processedFrame);
                 }
             }
             finally
@@ -497,7 +493,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     /// <param name="options">Thumbnail options.</param>
     /// <param name="fgColor">Foreground color for text.</param>
     /// <returns>Filter specification string.</returns>
-    private static string BuildHeaderFilterSpec(List<string> lines, ThumbnailOptions options, Rgba32 fgColor)
+    private static string BuildHeaderFilterSpec(List<string> lines, ThumbnailOptions options, RgbaColor fgColor)
     {
         var fontFile = FindFontFile(options.FontPath ?? "DroidSans");
         if (fontFile == null)
@@ -519,7 +515,7 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         var fontPath = fontFile.Replace("\\", "/").Replace(":", "\\\\:").Replace(" ", "\\ ").Replace("[", "\\[").Replace("]", "\\]").Replace(",", "\\,");
 
         // Convert color to hex
-        var colorHex = $"0x{fgColor.R:X2}{fgColor.G:X2}{fgColor.B:X2}";
+        var colorHex = fgColor.ToFilterHex();
 
         // Add drawtext filter for each line
         // Balanced positioning: first line at y=10 to match x=10
@@ -640,23 +636,6 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
     }
 
     /// <summary>
-    /// Creates a blank canvas with specified background color using FFmpeg.
-    /// </summary>
-    /// <param name="width">Width of the canvas.</param>
-    /// <param name="height">Height of the canvas.</param>
-    /// <param name="bgColorString">Background color string (e.g., "#RRGGBB").</param>
-    /// <returns>The created canvas image.</returns>
-    private static Image<Rgba32> CreateCanvasWithFFmpeg(int width, int height, string bgColorString)
-    {
-        // TODO: Implement using FFmpeg color source filter
-        // For now, create a basic image
-        var bgColor = ColorParser.ParseRgb(bgColorString);
-        var canvas = new Image<Rgba32>(width, height);
-        canvas.Mutate(ctx => ctx.Fill(bgColor));
-        return canvas;
-    }
-
-    /// <summary>
     /// Calculates the required header height based on content.
     /// Balanced padding: 10px top + (lineHeight * numLines) + 10px bottom
     /// Must account for DPI-scaled line height and font size.
@@ -686,107 +665,6 @@ public sealed unsafe class FFmpegFilterGraphComposer : IDisposable
         }
 
         return lineHeight * lines + 5;
-    }
-
-    /// <summary>
-    /// Converts an ImageSharp Image to FFmpeg AVFrame.
-    /// </summary>
-    /// <param name="image">The input ImageSharp image.</param>
-    /// <returns>The allocated AVFrame with image data.</returns>
-    private AVFrame* ImageToAVFrame(Image<Rgba32> image)
-    {
-        var frame = ffmpeg.av_frame_alloc();
-        if (frame == null)
-        {
-            throw new InvalidOperationException("Failed to allocate AVFrame");
-        }
-
-        frame->width = image.Width;
-        frame->height = image.Height;
-        frame->format = (int)AVPixelFormat.AV_PIX_FMT_RGBA;
-
-        // Allocate buffer for frame
-        var bufferSize = ffmpeg.av_image_get_buffer_size(AVPixelFormat.AV_PIX_FMT_RGBA, image.Width, image.Height, 1);
-        var buffer = (byte*)ffmpeg.av_malloc((ulong)bufferSize);
-
-        // Fill frame with image data
-        var dstData = new byte_ptr4();
-        var dstLinesize = new int4();
-        ffmpeg.av_image_fill_arrays(
-            ref dstData,
-            ref dstLinesize,
-            buffer,
-            AVPixelFormat.AV_PIX_FMT_RGBA,
-            image.Width,
-            image.Height,
-            1);
-
-        // Copy pointers to frame's byte_ptr8 and int8 arrays
-        frame->data[0] = dstData[0];
-        frame->data[1] = dstData[1];
-        frame->data[2] = dstData[2];
-        frame->data[3] = dstData[3];
-
-        frame->linesize[0] = dstLinesize[0];
-        frame->linesize[1] = dstLinesize[1];
-        frame->linesize[2] = dstLinesize[2];
-        frame->linesize[3] = dstLinesize[3];
-
-        // Copy pixel data from ImageSharp to AVFrame
-        image.ProcessPixelRows(accessor =>
-        {
-            for (int y = 0; y < image.Height; y++)
-            {
-                var row = accessor.GetRowSpan(y);
-                var destRow = buffer + (y * dstLinesize[0]);
-
-                for (int x = 0; x < image.Width; x++)
-                {
-                    var pixel = row[x];
-                    destRow[x * 4 + 0] = pixel.R;
-                    destRow[x * 4 + 1] = pixel.G;
-                    destRow[x * 4 + 2] = pixel.B;
-                    destRow[x * 4 + 3] = pixel.A;
-                }
-            }
-        });
-
-        return frame;
-    }
-
-    /// <summary>
-    /// Converts an FFmpeg AVFrame to ImageSharp Image.
-    /// </summary>
-    /// <param name="frame">The input AVFrame.</param>
-    /// <returns>The converted ImageSharp image.</returns>
-    private Image<Rgba32> AVFrameToImage(AVFrame* frame)
-    {
-        var image = new Image<Rgba32>(frame->width, frame->height);
-
-        var srcData = frame->data[0];
-        var stride = frame->linesize[0];
-
-        image.ProcessPixelRows(accessor =>
-        {
-            for (int y = 0; y < frame->height; y++)
-            {
-                var row = accessor.GetRowSpan(y);
-                var srcRow = srcData + (y * stride);
-
-                for (int x = 0; x < frame->width; x++)
-                {
-                    var pixelPtr = srcRow + (x * 4);
-                    row[x] = new Rgba32(
-                        pixelPtr[0],  // R
-                        pixelPtr[1],  // G
-                        pixelPtr[2],  // B
-                        pixelPtr[3]   // A
-                    );
-                }
-            }
-        });
-
-        return image;
     }
 
     /// <summary>

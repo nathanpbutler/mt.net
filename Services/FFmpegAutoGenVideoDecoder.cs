@@ -1,7 +1,6 @@
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using nathanbutlerDEV.mt.net.Models;
 
 namespace nathanbutlerDEV.mt.net.Services;
 
@@ -86,7 +85,7 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
         // Setup conversion context for RGBA conversion
         _pSwsContext = ffmpeg.sws_getContext(
             Width, Height, PixelFormat,
-            Width, Height, AVPixelFormat.AV_PIX_FMT_RGB24,
+            Width, Height, AVPixelFormat.AV_PIX_FMT_RGBA,
             (int)SwsFlags.SWS_BILINEAR, null, null, null);
 
         if (_pSwsContext == null)
@@ -95,7 +94,7 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
         }
 
         // Allocate buffer for RGB frame
-        var bufferSize = ffmpeg.av_image_get_buffer_size(AVPixelFormat.AV_PIX_FMT_RGB24, Width, Height, 1);
+        var bufferSize = ffmpeg.av_image_get_buffer_size(AVPixelFormat.AV_PIX_FMT_RGBA, Width, Height, 1);
         _convertedFrameBufferPtr = Marshal.AllocHGlobal(bufferSize);
         _dstData = new byte_ptr4();
         _dstLinesize = new int4();
@@ -104,7 +103,7 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
             ref _dstData,
             ref _dstLinesize,
             (byte*)_convertedFrameBufferPtr,
-            AVPixelFormat.AV_PIX_FMT_RGB24,
+            AVPixelFormat.AV_PIX_FMT_RGBA,
             Width,
             Height,
             1);
@@ -116,8 +115,8 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
     /// <param name="timestamp">Target timestamp</param>
     /// <param name="fast">If true, uses keyframe-based seeking (faster but less accurate).
     /// If false, decodes until exact frame is reached (slower but frame-accurate).</param>
-    /// <returns>Frame as ImageSharp Image, or null if extraction fails</returns>
-    public Image<Rgba32>? SeekAndExtractFrame(TimeSpan timestamp, bool fast = false)
+    /// <returns>Frame as an RGBA raster, or null if extraction fails</returns>
+    public RgbaImage? SeekAndExtractFrame(TimeSpan timestamp, bool fast = false)
     {
         try
         {
@@ -201,7 +200,7 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
                 return null;
             }
 
-            // Convert frame to RGBA and create ImageSharp Image
+            // Convert frame to RGBA
             return ConvertFrameToImage(targetFrame.Value);
         }
         catch (Exception ex)
@@ -211,9 +210,67 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
         }
     }
 
-    private Image<Rgba32> ConvertFrameToImage(AVFrame frame)
+    /// <summary>
+    /// Decodes the first available frame without seeking.
+    /// </summary>
+    /// <remarks>
+    /// Used for still images (watermarks, header images), which open as a single-frame
+    /// video stream but cannot be seeked.
+    /// </remarks>
+    /// <returns>The first frame as an RGBA raster, or null if decoding fails.</returns>
+    public RgbaImage? DecodeFirstFrame()
     {
-        // Convert YUV to RGBA using sws_scale
+        try
+        {
+            while (true)
+            {
+                ffmpeg.av_frame_unref(_pFrame);
+                ffmpeg.av_packet_unref(_pPacket);
+
+                var error = ffmpeg.av_read_frame(_pFormatContext, _pPacket);
+                if (error == ffmpeg.AVERROR_EOF)
+                {
+                    break;
+                }
+                error.ThrowExceptionIfError();
+
+                if (_pPacket->stream_index != _streamIndex)
+                {
+                    continue;
+                }
+
+                error = ffmpeg.avcodec_send_packet(_pCodecContext, _pPacket);
+                if (error < 0 && error != ffmpeg.AVERROR(ffmpeg.EAGAIN))
+                {
+                    error.ThrowExceptionIfError();
+                }
+
+                error = ffmpeg.avcodec_receive_frame(_pCodecContext, _pFrame);
+                if (error == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+                {
+                    continue;
+                }
+                if (error == ffmpeg.AVERROR_EOF)
+                {
+                    break;
+                }
+                error.ThrowExceptionIfError();
+
+                return ConvertFrameToImage(*_pFrame);
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error decoding first frame: {ex.Message}");
+            return null;
+        }
+    }
+
+    private RgbaImage ConvertFrameToImage(AVFrame frame)
+    {
+        // Convert the decoded frame to packed RGBA
         ffmpeg.sws_scale(
             _pSwsContext,
             frame.data,
@@ -223,31 +280,16 @@ public sealed unsafe class FFmpegAutoGenVideoDecoder : IDisposable
             _dstData,
             _dstLinesize);
 
-        // Create ImageSharp image from RGBA buffer
-        var image = new Image<Rgba32>(Width, Height);
+        var image = new RgbaImage(Width, Height);
 
-        var stride = _dstLinesize[0];
+        // sws may pad rows, so copy row by row rather than as one block
+        var srcStride = _dstLinesize[0];
         var pSrc = (byte*)_convertedFrameBufferPtr;
 
-        // Copy pixels to ImageSharp image
-        image.ProcessPixelRows(accessor =>
+        for (var y = 0; y < Height; y++)
         {
-            for (int y = 0; y < Height; y++)
-            {
-                var row = accessor.GetRowSpan(y);
-                var rowPtr = pSrc + (y * stride);
-
-                for (int x = 0; x < Width; x++)
-                {
-                    var pixelPtr = rowPtr + (x * 3);
-                    row[x] = new Rgba32(
-                        pixelPtr[0],  // R
-                        pixelPtr[1],  // G
-                        pixelPtr[2]  // B
-                    );
-                }
-            }
-        });
+            new ReadOnlySpan<byte>(pSrc + (y * srcStride), image.Stride).CopyTo(image.Row(y));
+        }
 
         return image;
     }

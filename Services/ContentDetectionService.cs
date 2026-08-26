@@ -1,55 +1,58 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using nathanbutlerDEV.mt.net.Models;
 
 namespace nathanbutlerDEV.mt.net.Services;
 
 public class ContentDetectionService
 {
-    public static bool IsBlankFrame(Image<Rgba32> image, int threshold = 85)
+    // Rec. 601 luma weights, used by the blank-frame brightness analysis.
+    private const double LumaR601 = 0.299;
+    private const double LumaG601 = 0.587;
+    private const double LumaB601 = 0.114;
+
+    // Rec. 709 luma weights, matching the greyscale conversion the blur detector
+    // previously performed via ImageSharp's default Grayscale() mode.
+    private const double LumaR709 = 0.2126;
+    private const double LumaG709 = 0.7152;
+    private const double LumaB709 = 0.0722;
+
+    public static bool IsBlankFrame(RgbaImage image, int threshold = 85)
     {
         // Use histogram analysis to detect blank frames
         // Calculate average brightness and check if it's too uniform
 
         long totalBrightness = 0;
-        long pixelCount = image.Width * image.Height;
+        long pixelCount = (long)image.Width * image.Height;
 
-        image.ProcessPixelRows(accessor =>
+        for (int y = 0; y < image.Height; y++)
         {
-            for (int y = 0; y < accessor.Height; y++)
-            {
-                var pixelRow = accessor.GetRowSpan(y);
+            var row = image.Row(y);
 
-                for (int x = 0; x < pixelRow.Length; x++)
-                {
-                    var pixel = pixelRow[x];
-                    // Calculate perceived brightness
-                    var brightness = pixel.R * 0.299 + pixel.G * 0.587 + pixel.B * 0.114;
-                    totalBrightness += (long)brightness;
-                }
+            for (int x = 0; x < image.Width; x++)
+            {
+                var i = x * 4;
+                // Calculate perceived brightness
+                var brightness = row[i] * LumaR601 + row[i + 1] * LumaG601 + row[i + 2] * LumaB601;
+                totalBrightness += (long)brightness;
             }
-        });
+        }
 
         var averageBrightness = totalBrightness / pixelCount;
 
         // Calculate variance to detect uniformity
         long variance = 0;
 
-        image.ProcessPixelRows(accessor =>
+        for (int y = 0; y < image.Height; y++)
         {
-            for (int y = 0; y < accessor.Height; y++)
-            {
-                var pixelRow = accessor.GetRowSpan(y);
+            var row = image.Row(y);
 
-                for (int x = 0; x < pixelRow.Length; x++)
-                {
-                    var pixel = pixelRow[x];
-                    var brightness = (long)(pixel.R * 0.299 + pixel.G * 0.587 + pixel.B * 0.114);
-                    var diff = brightness - averageBrightness;
-                    variance += diff * diff;
-                }
+            for (int x = 0; x < image.Width; x++)
+            {
+                var i = x * 4;
+                var brightness = (long)(row[i] * LumaR601 + row[i + 1] * LumaG601 + row[i + 2] * LumaB601);
+                var diff = brightness - averageBrightness;
+                variance += diff * diff;
             }
-        });
+        }
 
         var standardDeviation = Math.Sqrt(variance / pixelCount);
 
@@ -60,16 +63,12 @@ public class ContentDetectionService
         return standardDeviation < uniformityThreshold;
     }
 
-    public static bool IsBlurryFrame(Image<Rgba32> image, int threshold = 62)
+    public static bool IsBlurryFrame(RgbaImage image, int threshold = 62)
     {
         // Use Laplacian variance to detect blur
         // Lower variance indicates more blur
 
-        var grayscale = image.Clone(ctx => ctx.Grayscale());
-
-        double laplacianVariance = CalculateLaplacianVariance(grayscale);
-
-        grayscale.Dispose();
+        double laplacianVariance = CalculateLaplacianVariance(image);
 
         // Normalize threshold - lower threshold means stricter blur detection
         // Threshold of 62 is a middle ground (100 = very strict, 0 = very lenient)
@@ -78,49 +77,70 @@ public class ContentDetectionService
         return laplacianVariance < normalizedThreshold;
     }
 
-    private static double CalculateLaplacianVariance(Image<Rgba32> grayscaleImage)
+    /// <summary>
+    /// Runs a Laplacian kernel over the image's luma and returns the variance of the response.
+    /// </summary>
+    /// <remarks>
+    /// Luma is computed on the fly rather than materialising a greyscale copy first.
+    /// </remarks>
+    private static double CalculateLaplacianVariance(RgbaImage image)
     {
-        // Simplified Laplacian operator for blur detection
-        var width = grayscaleImage.Width;
-        var height = grayscaleImage.Height;
-        var values = new List<double>();
+        var width = image.Width;
+        var height = image.Height;
 
-        grayscaleImage.ProcessPixelRows(accessor =>
-        {
-            for (int y = 1; y < height - 1; y++)
-            {
-                var prevRow = accessor.GetRowSpan(y - 1);
-                var currRow = accessor.GetRowSpan(y);
-                var nextRow = accessor.GetRowSpan(y + 1);
-
-                for (int x = 1; x < width - 1; x++)
-                {
-                    // Laplacian kernel
-                    var laplacian =
-                        Math.Abs(
-                            -prevRow[x - 1].R - prevRow[x].R - prevRow[x + 1].R
-                            - currRow[x - 1].R + 8 * currRow[x].R - currRow[x + 1].R
-                            - nextRow[x - 1].R - nextRow[x].R - nextRow[x + 1].R
-                        );
-
-                    values.Add(laplacian);
-                }
-            }
-        });
-
-        if (values.Count == 0)
+        if (width < 3 || height < 3)
         {
             return 0;
         }
 
-        // Calculate variance
-        var mean = values.Average();
-        var variance = values.Sum(v => Math.Pow(v - mean, 2)) / values.Count;
+        // Precompute luma once; the kernel reads each pixel up to nine times.
+        var luma = new double[width * height];
+        for (int y = 0; y < height; y++)
+        {
+            var row = image.Row(y);
+            var offset = y * width;
 
-        return variance;
+            for (int x = 0; x < width; x++)
+            {
+                var i = x * 4;
+                luma[offset + x] = row[i] * LumaR709 + row[i + 1] * LumaG709 + row[i + 2] * LumaB709;
+            }
+        }
+
+        var count = 0L;
+        var sum = 0.0;
+        var sumSquares = 0.0;
+
+        for (int y = 1; y < height - 1; y++)
+        {
+            var prev = (y - 1) * width;
+            var curr = y * width;
+            var next = (y + 1) * width;
+
+            for (int x = 1; x < width - 1; x++)
+            {
+                // Laplacian kernel
+                var laplacian = Math.Abs(
+                    -luma[prev + x - 1] - luma[prev + x] - luma[prev + x + 1]
+                    - luma[curr + x - 1] + 8 * luma[curr + x] - luma[curr + x + 1]
+                    - luma[next + x - 1] - luma[next + x] - luma[next + x + 1]);
+
+                count++;
+                sum += laplacian;
+                sumSquares += laplacian * laplacian;
+            }
+        }
+
+        if (count == 0)
+        {
+            return 0;
+        }
+
+        var mean = sum / count;
+        return (sumSquares / count) - (mean * mean);
     }
 
-    public static bool IsSafeForWork(Image<Rgba32> image)
+    public static bool IsSafeForWork(RgbaImage image)
     {
         // Basic skin tone detection as a simple SFW filter
         // This is experimental and not very accurate
@@ -128,24 +148,21 @@ public class ContentDetectionService
         int skinPixelCount = 0;
         int totalPixels = image.Width * image.Height;
 
-        image.ProcessPixelRows(accessor =>
+        for (int y = 0; y < image.Height; y++)
         {
-            for (int y = 0; y < accessor.Height; y++)
+            var row = image.Row(y);
+
+            for (int x = 0; x < image.Width; x++)
             {
-                var pixelRow = accessor.GetRowSpan(y);
+                var i = x * 4;
 
-                for (int x = 0; x < pixelRow.Length; x++)
+                // Simple skin tone detection (YCbCr color space approximation)
+                if (IsSkinTone(row[i], row[i + 1], row[i + 2]))
                 {
-                    var pixel = pixelRow[x];
-
-                    // Simple skin tone detection (YCbCr color space approximation)
-                    if (IsSkinTone(pixel.R, pixel.G, pixel.B))
-                    {
-                        skinPixelCount++;
-                    }
+                    skinPixelCount++;
                 }
             }
-        });
+        }
 
         var skinPercentage = (skinPixelCount * 100.0) / totalPixels;
 
@@ -163,8 +180,8 @@ public class ContentDetectionService
                r - Math.Min(g, b) > 15;
     }
 
-    public static Image<Rgba32>? FindBestFrame(
-        List<Image<Rgba32>> candidates,
+    public static RgbaImage? FindBestFrame(
+        List<RgbaImage> candidates,
         bool skipBlank,
         bool skipBlurry,
         int blankThreshold = 85,

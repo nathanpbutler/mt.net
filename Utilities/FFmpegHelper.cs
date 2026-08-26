@@ -5,15 +5,25 @@ using FFmpeg.AutoGen.Bindings.DynamicallyLoaded;
 namespace nathanbutlerDEV.mt.net.Utilities;
 
 /// <summary>
-/// Helper class for initializing FFmpeg libraries
+/// Locates the native FFmpeg 9.x shared libraries and initializes the bindings.
 /// </summary>
 public static class FFmpegHelper
 {
-    private static bool _initialized = false;
-    private static readonly object _lock = new object();
+    /// <summary>
+    /// libavcodec SONAME major for FFmpeg 9.x. FFmpeg 9.0 bumped every library major
+    /// (libavcodec 62 -> 63), so an 8.x install is ABI-incompatible and must not be bound.
+    /// </summary>
+    private const int AvCodecMajor = 63;
+
+    /// <summary>Environment variable that overrides library discovery entirely.</summary>
+    private const string PathOverrideVariable = "MT_FFMPEG_PATH";
+
+    private static bool _initialized;
+    private static bool _drawTextWarningShown;
+    private static readonly object _lock = new();
 
     /// <summary>
-    /// Initializes FFmpeg libraries and sets the library path
+    /// Initializes FFmpeg libraries and sets the native library search path.
     /// </summary>
     public static void Initialize(bool verbose = false)
     {
@@ -24,7 +34,6 @@ public static class FFmpegHelper
 
             try
             {
-                // Set FFmpeg library path based on platform
                 var libraryPath = SetFFmpegLibraryPath(verbose);
 
                 if (verbose && !string.IsNullOrEmpty(libraryPath))
@@ -32,11 +41,9 @@ public static class FFmpegHelper
                     Console.WriteLine($"FFmpeg library path set to: {libraryPath}");
                 }
 
-                // Initialize dynamically loaded bindings
                 DynamicallyLoadedBindings.Initialize();
 
-                // Set log level to suppress informational warnings (like swscaler colorspace messages)
-                // while still showing actual errors
+                // Suppress informational chatter (e.g. swscaler colorspace notes) but keep errors.
                 unsafe
                 {
                     ffmpeg.av_log_set_level(ffmpeg.AV_LOG_ERROR);
@@ -44,168 +51,265 @@ public static class FFmpegHelper
 
                 _initialized = true;
 
-                // Log FFmpeg version
-                unsafe
+                if (verbose)
                 {
-                    var version = ffmpeg.av_version_info();
-                    Console.WriteLine($"FFmpeg initialized successfully: {version}");
-
-                    if (verbose)
+                    unsafe
                     {
-                        Console.WriteLine($"  libavcodec version: {ffmpeg.avcodec_version()}");
+                        Console.WriteLine($"FFmpeg initialized successfully: {ffmpeg.av_version_info()}");
+                        Console.WriteLine($"  libavcodec version:  {ffmpeg.avcodec_version()}");
                         Console.WriteLine($"  libavformat version: {ffmpeg.avformat_version()}");
-                        Console.WriteLine($"  libavutil version: {ffmpeg.avutil_version()}");
+                        Console.WriteLine($"  libavutil version:   {ffmpeg.avutil_version()}");
                     }
+
+                    Console.WriteLine($"  drawtext filter:     {(HasDrawText ? "available" : "MISSING")}");
                 }
             }
             catch (Exception ex)
             {
-                var errorMsg = "Failed to initialize FFmpeg.\n\n";
-
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    errorMsg += "On macOS, ensure FFmpeg 8.x is installed:\n" +
-                               "  brew install ffmpeg@8\n\n" +
-                               "Check your installation:\n" +
-                               "  brew list ffmpeg@8\n" +
-                               "  brew info ffmpeg@8\n\n" +
-                               "NOTE: FFmpeg.AutoGen 8.0.0.1 requires FFmpeg 8.x libraries.\n" +
-                               "If you have FFmpeg 7.x or older, you need to install FFmpeg 8:\n" +
-                               "  brew install ffmpeg@8\n";
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                {
-                    errorMsg += "On Linux, ensure FFmpeg 8.x is installed:\n" +
-                               "  apt-get install ffmpeg (or equivalent)\n";
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    errorMsg += "On Windows, download FFmpeg 8.x from:\n" +
-                               "  https://www.gyan.dev/ffmpeg/builds/\n";
-                }
-
-                errorMsg += $"\nError details: {ex.Message}";
-
-                if (ex.InnerException != null)
-                {
-                    errorMsg += $"\nInner error: {ex.InnerException.Message}";
-                }
-
-                throw new InvalidOperationException(errorMsg, ex);
+                throw new InvalidOperationException(BuildInitFailureMessage(ex), ex);
             }
         }
     }
 
-    private static string? SetFFmpegLibraryPath(bool verbose = false)
+    /// <summary>
+    /// Whether the loaded FFmpeg build includes the <c>drawtext</c> filter.
+    /// </summary>
+    /// <remarks>
+    /// Homebrew's stock ffmpeg formula is built without libfreetype, which drops drawtext,
+    /// subtitles and ass. avfilter_get_by_name returns null for filters that were not
+    /// compiled in, so this is a direct probe rather than a guess.
+    /// </remarks>
+    public static bool HasDrawText
     {
+        get
+        {
+            unsafe
+            {
+                return ffmpeg.avfilter_get_by_name("drawtext") != null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Prints a one-time warning to stderr when text rendering was requested but the loaded
+    /// FFmpeg build cannot do it. Non-fatal: a contact sheet without a header is still useful.
+    /// </summary>
+    public static void WarnIfDrawTextMissing()
+    {
+        if (_drawTextWarningShown || HasDrawText)
+            return;
+
+        _drawTextWarningShown = true;
+
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("WARNING: this FFmpeg build has no drawtext filter, so the header and");
+        Console.Error.WriteLine("         timestamps cannot be rendered. The contact sheet will be created");
+        Console.Error.WriteLine("         without any text.");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("         drawtext requires FFmpeg to be built with libfreetype.");
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            // Build list of paths to check
-            var searchPaths = new List<string>();
-
-            // 1. Check for ffmpeg@8 Cellar (versioned keg-only installation)
-            var cellarBase = "/opt/homebrew/Cellar/ffmpeg@8";  // Apple Silicon
-            if (Directory.Exists(cellarBase))
-            {
-                // Find all version subdirectories and get their lib paths
-                var versionDirs = Directory.GetDirectories(cellarBase)
-                    .OrderByDescending(d => d) // Newest version first
-                    .Select(d => Path.Combine(d, "lib"));
-                searchPaths.AddRange(versionDirs);
-            }
-
-            cellarBase = "/usr/local/Cellar/ffmpeg@8";  // Intel Mac
-            if (Directory.Exists(cellarBase))
-            {
-                var versionDirs = Directory.GetDirectories(cellarBase)
-                    .OrderByDescending(d => d)
-                    .Select(d => Path.Combine(d, "lib"));
-                searchPaths.AddRange(versionDirs);
-            }
-
-            // 2. Check opt link (keg-only)
-            searchPaths.Add("/opt/homebrew/opt/ffmpeg@8/lib");
-            searchPaths.Add("/usr/local/opt/ffmpeg@8/lib");
-
-            // 3. Check regular ffmpeg Cellar (if not keg-only)
-            cellarBase = "/opt/homebrew/Cellar/ffmpeg";
-            if (Directory.Exists(cellarBase))
-            {
-                var versionDirs = Directory.GetDirectories(cellarBase)
-                    .Where(d => Path.GetFileName(d).StartsWith("8."))  // Only FFmpeg 8.x
-                    .OrderByDescending(d => d)
-                    .Select(d => Path.Combine(d, "lib"));
-                searchPaths.AddRange(versionDirs);
-            }
-
-            // 4. Check default lib directories (linked installations)
-            searchPaths.Add("/opt/homebrew/lib");
-            searchPaths.Add("/usr/local/lib");
-
-            // Try each path
-            foreach (var path in searchPaths)
-            {
-                if (!Directory.Exists(path))
-                {
-                    if (verbose)
-                        Console.WriteLine($"  Skipping (not found): {path}");
-                    continue;
-                }
-
-                // Check if libavcodec actually exists in this path
-                var testLibs = new[]
-                {
-                    Path.Combine(path, "libavcodec.dylib"),
-                    Path.Combine(path, "libavcodec.62.dylib"),  // FFmpeg 8.x
-                    Path.Combine(path, "libavcodec.61.dylib"),  // FFmpeg 7.x (for reference)
-                };
-
-                var foundLib = testLibs.FirstOrDefault(File.Exists);
-                if (foundLib != null)
-                {
-                    Console.WriteLine($"Found FFmpeg library: {foundLib}");
-                    DynamicallyLoadedBindings.LibrariesPath = path;
-                    return path;
-                }
-                else if (verbose)
-                {
-                    Console.WriteLine($"  Path exists but no FFmpeg libraries: {path}");
-                }
-            }
-
-            // If we get here, we didn't find FFmpeg
-            Console.WriteLine("WARNING: No FFmpeg 8.x libraries found in standard Homebrew locations.");
-            Console.WriteLine("Attempting to use system default paths (may fail)...");
+            Console.Error.WriteLine("         Homebrew's stock ffmpeg formula is built without it. Install the");
+            Console.Error.WriteLine("         batteries-included build instead:");
+            Console.Error.WriteLine();
+            Console.Error.WriteLine("           brew install ffmpeg-full");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            // Try common Linux paths
-            var linuxPaths = new[]
-            {
-                "/usr/lib/x86_64-linux-gnu",
-                "/usr/lib64",
-                "/usr/lib",
-            };
-
-            foreach (var path in linuxPaths)
-            {
-                if (Directory.Exists(path))
-                {
-                    if (verbose)
-                        Console.WriteLine($"  Using library path: {path}");
-                    DynamicallyLoadedBindings.LibrariesPath = path;
-                    return path;
-                }
-            }
+            Console.Error.WriteLine("         Install a distribution build with libfreetype enabled, or set");
+            Console.Error.WriteLine($"         {PathOverrideVariable} to a directory containing one.");
         }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        else
         {
-            // On Windows, FFmpeg binaries should be in the application directory
-            // or in PATH. DynamicallyLoaded will search these locations.
-            if (verbose)
-                Console.WriteLine("Windows: Using default library search paths.");
+            Console.Error.WriteLine("         Use a full build such as the gyan.dev full or essentials release.");
         }
+
+        Console.Error.WriteLine();
+    }
+
+    private static string? SetFFmpegLibraryPath(bool verbose)
+    {
+        // An explicit override always wins.
+        var overridePath = Environment.GetEnvironmentVariable(PathOverrideVariable);
+        if (!string.IsNullOrWhiteSpace(overridePath))
+        {
+            if (Directory.Exists(overridePath))
+            {
+                if (verbose)
+                    Console.WriteLine($"  Using {PathOverrideVariable}: {overridePath}");
+
+                DynamicallyLoadedBindings.LibrariesPath = overridePath;
+                return overridePath;
+            }
+
+            Console.Error.WriteLine($"WARNING: {PathOverrideVariable} is set to '{overridePath}', which does not exist. Ignoring.");
+        }
+
+        foreach (var path in GetSearchPaths())
+        {
+            if (!Directory.Exists(path))
+            {
+                if (verbose)
+                    Console.WriteLine($"  Skipping (not found): {path}");
+                continue;
+            }
+
+            var foundLib = GetProbeNames().Select(name => Path.Combine(path, name)).FirstOrDefault(File.Exists);
+            if (foundLib is not null)
+            {
+                if (verbose)
+                    Console.WriteLine($"  Found FFmpeg library: {foundLib}");
+
+                DynamicallyLoadedBindings.LibrariesPath = path;
+                return path;
+            }
+
+            if (verbose)
+                Console.WriteLine($"  Path exists but has no FFmpeg {AvCodecMajor}.x libraries: {path}");
+        }
+
+        if (verbose)
+            Console.WriteLine("  No FFmpeg libraries found in the standard locations; falling back to the default loader.");
 
         return null;
+    }
+
+    /// <summary>
+    /// Candidate filenames for libavcodec on the current platform, most specific first.
+    /// </summary>
+    private static IEnumerable<string> GetProbeNames()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            yield return $"libavcodec.{AvCodecMajor}.dylib";
+            yield return "libavcodec.dylib";
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            yield return $"libavcodec.so.{AvCodecMajor}";
+            yield return "libavcodec.so";
+        }
+        else
+        {
+            yield return $"avcodec-{AvCodecMajor}.dll";
+        }
+    }
+
+    private static IEnumerable<string> GetSearchPaths()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            return GetMacSearchPaths();
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return ["/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu", "/usr/lib64", "/usr/local/lib", "/usr/lib"];
+
+        return GetWindowsSearchPaths();
+    }
+
+    /// <summary>
+    /// Homebrew search order. ffmpeg-full comes first because it is the only brew keg built
+    /// with libfreetype, and therefore the only one where drawtext works. It is keg-only, so
+    /// it is never symlinked into /opt/homebrew/lib and has to be named explicitly.
+    /// </summary>
+    private static IEnumerable<string> GetMacSearchPaths()
+    {
+        foreach (var prefix in new[] { "/opt/homebrew", "/usr/local" })
+        {
+            yield return $"{prefix}/opt/ffmpeg-full/lib";
+
+            foreach (var dir in EnumerateCellarVersions($"{prefix}/Cellar/ffmpeg-full"))
+                yield return dir;
+        }
+
+        foreach (var prefix in new[] { "/opt/homebrew", "/usr/local" })
+        {
+            yield return $"{prefix}/opt/ffmpeg/lib";
+
+            foreach (var dir in EnumerateCellarVersions($"{prefix}/Cellar/ffmpeg"))
+                yield return dir;
+        }
+
+        yield return "/opt/homebrew/lib";
+        yield return "/usr/local/lib";
+    }
+
+    /// <summary>Enumerates cellar version/lib directories, newest first.</summary>
+    private static IEnumerable<string> EnumerateCellarVersions(string cellarBase)
+    {
+        if (!Directory.Exists(cellarBase))
+            return [];
+
+        try
+        {
+            return Directory.GetDirectories(cellarBase)
+                .OrderByDescending(d => d, StringComparer.OrdinalIgnoreCase)
+                .Select(d => Path.Combine(d, "lib"))
+                .ToList();
+        }
+        catch (IOException)
+        {
+            return [];
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    private static IEnumerable<string> GetWindowsSearchPaths()
+    {
+        yield return AppContext.BaseDirectory;
+
+        var pathVariable = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var entry in pathVariable.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            yield return entry;
+        }
+
+        foreach (var folder in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
+        {
+            var root = Environment.GetFolderPath(folder);
+            if (string.IsNullOrEmpty(root))
+                continue;
+
+            yield return Path.Combine(root, "ffmpeg", "bin");
+        }
+    }
+
+    private static string BuildInitFailureMessage(Exception ex)
+    {
+        var message = "Failed to initialize FFmpeg.\n\n" +
+                      "mt.net requires the FFmpeg 9.x shared libraries (libavcodec 63).\n\n";
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            message += "On macOS, install FFmpeg via Homebrew:\n\n" +
+                       "  brew install ffmpeg-full\n\n" +
+                       "ffmpeg-full is recommended over the stock ffmpeg formula because the stock\n" +
+                       "formula is built without libfreetype, which removes the drawtext filter that\n" +
+                       "mt.net uses to render the header and timestamps.\n\n" +
+                       "Verify the install:\n" +
+                       "  brew info ffmpeg-full\n";
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            message += "On Linux, install FFmpeg 9.x from your distribution:\n" +
+                       "  apt-get install ffmpeg   (or the equivalent for your distro)\n";
+        }
+        else
+        {
+            message += "On Windows, download an FFmpeg 9.x shared build from:\n" +
+                       "  https://www.gyan.dev/ffmpeg/builds/\n\n" +
+                       "Then add its bin directory to PATH, or place the DLLs next to mt.exe.\n";
+        }
+
+        message += $"\nYou can also point mt.net at a specific directory with {PathOverrideVariable}.\n";
+        message += $"\nError details: {ex.Message}";
+
+        if (ex.InnerException is not null)
+            message += $"\nInner error: {ex.InnerException.Message}";
+
+        return message;
     }
 }
